@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The design of Ground Control</title>
+<style>
+:root{
+  --ground:#F6F7F9; --surface:#FFFFFF; --surface-2:#ECEFF3; --surface-3:#E2E7EE;
+  --ink:#161B22; --ink-2:#4B5563; --ink-3:#8A94A3;
+  --rule:#DCE1E8; --rule-2:#C2C9D4;
+  --accent:#3B4F8C; --accent-soft:#E3E8F5; --accent-line:#B9C4E4;
+  --good:#2C6A52; --good-soft:#E0EDE7;
+  --warn:#9C5A22; --warn-soft:#F6EADB;
+  --c1:#3B4F8C; --c2:#5C71AC; --c3:#8193C6; --c4:#A6B3D9; --c5:#C6CEE7; --c6:#DEE3F1;
+  --h0:#E7EAEF; --h1:#C9D2E9; --h2:#9AAAD6; --h3:#6A80BA; --h4:#3B4F8C;
+  --shadow:0 1px 2px rgba(22,27,34,.05),0 6px 16px -8px rgba(22,27,34,.12);
+  --display:Georgia,'Iowan Old Style','Times New Roman',serif;
+  --body:system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;
+  --measure:72ch;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#0F1319; --surface:#171C24; --surface-2:#1F262F; --surface-3:#28303A;
+  --ink:#EAEEF4; --ink-2:#AAB4C2; --ink-3:#79838F;
+  --rule:#28303A; --rule-2:#39424E;
+  --accent:#9CB0E8; --accent-soft:#1C2436; --accent-line:#33405F;
+  --good:#7FC4A6; --good-soft:#182A24;
+  --warn:#D8975A; --warn-soft:#2E2418;
+  --c1:#9CB0E8; --c2:#7C90C9; --c3:#6172A6; --c4:#4B5880; --c5:#3A445F; --c6:#2C3346;
+  --h0:#1E252F; --h1:#2E3B55; --h2:#47598A; --h3:#6E85C4; --h4:#9CB0E8;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 16px -8px rgba(0,0,0,.5);
+}}
+:root[data-theme="dark"]{
+  --ground:#0F1319; --surface:#171C24; --surface-2:#1F262F; --surface-3:#28303A;
+  --ink:#EAEEF4; --ink-2:#AAB4C2; --ink-3:#79838F;
+  --rule:#28303A; --rule-2:#39424E;
+  --accent:#9CB0E8; --accent-soft:#1C2436; --accent-line:#33405F;
+  --good:#7FC4A6; --good-soft:#182A24;
+  --warn:#D8975A; --warn-soft:#2E2418;
+  --c1:#9CB0E8; --c2:#7C90C9; --c3:#6172A6; --c4:#4B5880; --c5:#3A445F; --c6:#2C3346;
+  --h0:#1E252F; --h1:#2E3B55; --h2:#47598A; --h3:#6E85C4; --h4:#9CB0E8;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 16px -8px rgba(0,0,0,.5);
+}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--body);
+  font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;
+  overflow-x:hidden}
+img{max-width:100%;height:auto}
+a{color:var(--accent);text-underline-offset:2px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+
+/* Only the horizontal padding lives here, so an element can be BOTH the
+   centred column and carry its own vertical rhythm (main, .mast-in) without
+   the shorthand wiping it out. */
+.wrap{max-width:820px;margin:0 auto;padding-left:22px;padding-right:22px}
+
+/* --- masthead ------------------------------------------------------ */
+header.mast{background:var(--surface);border-bottom:1px solid var(--rule)}
+.mast-in{padding-top:44px;padding-bottom:30px;display:flex;flex-direction:column;gap:18px}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--accent);margin:0}
+h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,5.4vw,46px);
+  line-height:1.05;margin:0;letter-spacing:-.015em;text-wrap:balance;
+  overflow-wrap:anywhere}
+.standfirst{font-size:17px;color:var(--ink-2);margin:0;max-width:64ch;line-height:1.5}
+
+/* --- stat band ----------------------------------------------------- */
+.strip{display:flex;flex-wrap:wrap;border:1px solid var(--rule);border-radius:4px;
+  overflow:hidden;margin:0}
+.cell{flex:1 1 128px;padding:11px 14px;border-right:1px solid var(--rule);
+  border-top:1px solid var(--rule);background:var(--surface);margin-top:-1px}
+.cell:last-child{border-right:none}
+.cell dt{font-family:var(--mono);font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);margin:0 0 3px}
+.cell dd{margin:0;font-size:14.5px;font-weight:600;font-variant-numeric:tabular-nums;
+  overflow-wrap:anywhere}
+.cell dd .unit{font-weight:400;color:var(--ink-3);font-size:12.5px}
+
+/* --- callouts ------------------------------------------------------ */
+.callout{background:var(--accent-soft);border-radius:4px;padding:15px 17px;
+  display:flex;flex-direction:column;gap:8px}
+.callout h2{font-family:var(--mono);font-size:10px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--accent);margin:0;font-weight:600}
+.callout p{margin:0;font-size:14.5px;line-height:1.55;color:var(--ink-2)}
+.callout p strong{color:var(--ink);font-weight:600}
+.callout.plain{background:var(--surface-2)}
+.callout.plain h2{color:var(--ink-3)}
+.callout.warnish{background:var(--warn-soft)}
+.callout.warnish h2{color:var(--warn)}
+
+/* --- sections ------------------------------------------------------ */
+main{padding-top:34px;padding-bottom:56px}
+section{margin-bottom:40px}
+section:last-child{margin-bottom:0}
+h2.sec{font-family:var(--display);font-weight:400;font-size:27px;margin:0 0 4px;
+  line-height:1.2;letter-spacing:-.01em;text-wrap:balance}
+p.seclabel{font-family:var(--mono);font-size:11px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);margin:0 0 16px}
+h3{font-family:var(--display);font-weight:400;font-size:20px;margin:28px 0 9px;
+  line-height:1.25;letter-spacing:-.005em}
+p.body{font-size:15.5px;color:var(--ink-2);max-width:var(--measure);margin:0 0 13px}
+p.body:last-child{margin-bottom:0}
+p.body strong{color:var(--ink);font-weight:600}
+p.note{font-size:13.5px;color:var(--ink-3);max-width:var(--measure);margin:11px 0 0;
+  line-height:1.5}
+ul.body,ol.body{font-size:15.5px;color:var(--ink-2);max-width:var(--measure);
+  margin:0 0 13px;padding-left:20px;display:flex;flex-direction:column;gap:7px}
+ul.body strong,ol.body strong{color:var(--ink);font-weight:600}
+.rule{border:0;border-top:1px solid var(--rule);margin:34px 0}
+.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+code,.path{font-family:var(--mono);font-size:.88em;background:var(--surface-2);
+  padding:1px 5px;border-radius:2px;overflow-wrap:anywhere}
+pre{font-family:var(--mono);font-size:13px;line-height:1.55;background:var(--surface-2);
+  border:1px solid var(--rule);border-radius:4px;padding:12px 14px;margin:0 0 13px;
+  overflow-x:auto}
+pre code{background:none;padding:0;font-size:inherit}
+
+/* --- tables -------------------------------------------------------- */
+.tw{overflow-x:auto;border:1px solid var(--rule);border-radius:4px;
+  background:var(--surface);margin:0 0 6px;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;font-size:14px;margin:0}
+th,td{text-align:left;padding:9px 13px;border-bottom:1px solid var(--rule);
+  vertical-align:top}
+th{font-family:var(--mono);font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-3);font-weight:600;background:var(--surface-2);white-space:nowrap}
+tr:last-child td{border-bottom:none}
+td b{color:var(--ink);font-weight:600}
+td .path,td code{background:none;padding:0}
+td.n{font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--ink-2)}
+td.m{font-family:var(--mono);font-size:12.5px;overflow-wrap:anywhere}
+td.sub{color:var(--ink-3);font-size:13px}
+td .sub{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);margin-top:2px;
+  overflow-wrap:anywhere}
+
+/* --- pills --------------------------------------------------------- */
+.pills{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 4px;padding:0;list-style:none}
+.pill{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+  padding:3px 8px;border-radius:2px;background:var(--surface-2);color:var(--ink-2);
+  white-space:nowrap}
+.pill.ok{background:var(--good-soft);color:var(--good)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.accent{background:var(--accent-soft);color:var(--accent)}
+
+/* --- composition bar ----------------------------------------------- */
+.comp{display:flex;flex-direction:column;gap:11px}
+.compbar{display:flex;width:100%;height:12px;border-radius:2px;overflow:hidden;
+  background:var(--surface-2);border:1px solid var(--rule)}
+.compbar span{display:block;height:100%;min-width:1px}
+.compbar span+span{box-shadow:inset 1px 0 0 var(--surface)}
+.complegend{display:flex;flex-wrap:wrap;gap:6px 18px;margin:0;padding:0;list-style:none}
+.complegend li{display:flex;align-items:baseline;gap:7px;font-size:13.5px;color:var(--ink-2)}
+.sw{width:9px;height:9px;border-radius:2px;flex:none;transform:translateY(-1px)}
+.complegend b{color:var(--ink);font-weight:600}
+.complegend .n{font-family:var(--mono);font-size:12px;color:var(--ink-3);
+  font-variant-numeric:tabular-nums}
+
+/* --- heatmap ------------------------------------------------------- */
+.heat{display:flex;flex-direction:column;gap:10px}
+.heatscroll{overflow-x:auto;padding-bottom:2px;-webkit-overflow-scrolling:touch}
+.heatscroll svg{display:block}
+.heatfoot{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ink-3)}
+.scale{display:flex;align-items:center;gap:4px}
+.scale i{width:10px;height:10px;border-radius:2px;display:block}
+
+/* --- file tree ----------------------------------------------------- */
+.treewrap{overflow-x:auto;border:1px solid var(--rule);border-radius:4px;
+  background:var(--surface);-webkit-overflow-scrolling:touch}
+ul.tree{list-style:none;margin:0;padding:12px 14px;font-family:var(--mono);
+  font-size:12.5px;line-height:1.9;min-width:max-content}
+ul.tree li{display:flex;gap:14px;align-items:baseline;white-space:nowrap}
+ul.tree .nm{color:var(--ink)}
+ul.tree .nm.dir{color:var(--accent);font-weight:600}
+ul.tree .meta{margin-left:auto;color:var(--ink-3);font-size:11px;padding-left:24px}
+
+/* --- log / commit list --------------------------------------------- */
+ul.log{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+ul.log li{display:flex;gap:12px;align-items:baseline;padding:8px 0;
+  border-bottom:1px solid var(--rule);font-size:14.5px}
+ul.log li:last-child{border-bottom:none}
+ul.log .sha{font-family:var(--mono);font-size:11.5px;color:var(--accent);flex:none;
+  padding-top:1px}
+ul.log .subj{flex:1 1 auto;color:var(--ink-2);overflow-wrap:anywhere;line-height:1.45}
+ul.log .when{font-family:var(--mono);font-size:11px;color:var(--ink-3);flex:none;
+  white-space:nowrap;padding-top:1px}
+
+/* --- definition rows ----------------------------------------------- */
+dl.facts{margin:0;display:grid;grid-template-columns:minmax(96px,auto) 1fr;
+  gap:0;font-size:14.5px}
+dl.facts dt{font-family:var(--mono);font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);padding:8px 20px 8px 0;
+  border-top:1px solid var(--rule);white-space:nowrap}
+dl.facts dd{margin:0;padding:8px 0;border-top:1px solid var(--rule);color:var(--ink-2);
+  overflow-wrap:anywhere;min-width:0}
+dl.facts dt:first-of-type,dl.facts dd:first-of-type{border-top:none}
+dl.facts dd b{color:var(--ink);font-weight:600}
+dl.facts dd .path{background:none;padding:0;font-size:13px}
+
+/* --- disclosure ---------------------------------------------------- */
+details.fold{border:1px solid var(--rule);border-radius:4px;background:var(--surface);
+  box-shadow:var(--shadow);overflow:hidden}
+details.fold>summary{cursor:pointer;list-style:none;padding:11px 15px;
+  font-family:var(--mono);font-size:11px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-3);display:flex;gap:10px;align-items:baseline}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary .foldn{margin-left:auto;color:var(--ink-3);opacity:.85;
+  font-variant-numeric:tabular-nums}
+details.fold>summary::after{content:"+";margin-left:12px;color:var(--accent);
+  font-size:13px;line-height:1}
+details.fold>summary:hover{color:var(--accent)}
+details.fold[open]>summary::after{content:"–"}
+details.fold[open]>summary{border-bottom:1px solid var(--rule)}
+details.fold .foldbody{padding:13px 15px 16px}
+details.fold .foldbody>.treewrap,details.fold .foldbody>.tw{border:none;border-radius:0}
+details.fold .foldbody:has(>.treewrap),details.fold .foldbody:has(>.tw){padding:0}
+
+/* --- empty state --------------------------------------------------- */
+.hollow{border:1px dashed var(--rule-2);border-radius:4px;padding:26px 20px;
+  text-align:center;color:var(--ink-3);font-size:14.5px;background:var(--surface)}
+.hollow b{display:block;font-family:var(--display);font-size:19px;line-height:1.25;
+  color:var(--ink-2);font-weight:400;margin-bottom:5px}
+
+/* --- footer -------------------------------------------------------- */
+footer{border-top:1px solid var(--rule);background:var(--surface);
+  padding:30px 0 48px;font-size:14.5px;color:var(--ink-2)}
+footer h2{font-family:var(--display);font-weight:400;font-size:21px;margin:0 0 10px;
+  color:var(--ink)}
+footer p{max-width:var(--measure);margin:0 0 11px;line-height:1.6}
+footer ul{max-width:var(--measure);margin:0 0 11px;padding-left:20px;
+  display:flex;flex-direction:column;gap:7px}
+footer .colophon{font-family:var(--mono);font-size:11px;letter-spacing:.06em;
+  color:var(--ink-3);margin:18px 0 0;line-height:1.7;overflow-wrap:anywhere}
+
+/* --- narrow screens ------------------------------------------------ */
+/* Keep the stat band on tidy rows rather than letting one trailing cell
+   stretch across a whole row on its own. */
+@media (max-width:800px){.cell{flex:1 1 33.333%}}
+
+@media (max-width:560px){
+  .wrap{padding-left:16px;padding-right:16px}
+  .mast-in{padding-top:32px;padding-bottom:24px}
+  .cell{flex:1 1 50%}
+  dl.facts{grid-template-columns:1fr;gap:0}
+  dl.facts dt{padding:8px 0 0;border-top:1px solid var(--rule)}
+  dl.facts dd{padding:2px 0 8px;border-top:none}
+  dl.facts dd:first-of-type{border-top:none}
+  ul.log li{flex-wrap:wrap;gap:4px 12px}
+  ul.log .subj{flex:1 1 100%;order:3}
+}
+
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+@media print{
+  :root{--ground:#fff;--surface:#fff;--surface-2:#f4f4f4;--ink:#000;--ink-2:#333;
+    --ink-3:#666;--rule:#ccc;--accent:#243a72;--accent-soft:#eef1f9}
+  body{font-size:11pt}
+  .wrap{max-width:none}
+  header.mast,footer{background:none}
+  details.fold{box-shadow:none}
+  details.fold>summary::after{content:""}
+  details.fold .foldbody{display:block!important}
+  section{break-inside:avoid-page}
+  .heatscroll,.treewrap,.tw{overflow:visible}
+}
+
+/* --- additions ----------------------------------------------------- */
+.decision{margin:0 0 6px}
+.quote{font-family:var(--mono);font-size:13px;line-height:1.6}
+.cite{font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--ink-3)}
+</style>
+</head>
+<body>
+
+<header class="mast">
+  <div class="wrap mast-in">
+    <p class="eyebrow">Design rationale</p>
+    <h1>The design of Ground Control</h1>
+    <p class="standfirst">A local dashboard over a folder of half-finished projects, built with no dependencies, specified in six contract documents, and given exactly three ways to modify anything it looks at. This is what those decisions cost.</p>
+
+    <dl class="strip"><div class="cell"><dt>Status</dt><dd>Active</dd></div><div class="cell"><dt>Files</dt><dd>64</dd></div><div class="cell"><dt>Size</dt><dd>2.9 MB</dd></div><div class="cell"><dt>Language</dt><dd>JavaScript</dd></div><div class="cell"><dt>Last activity</dt><dd>just now</dd></div></dl>
+
+    <div class="callout">
+      <h2>How to read the evidence in this document</h2>
+      <p><strong>Stated</strong> means the author wrote the reason down; it is quoted and cited to <span class="path">path:line</span> or to a contract section. <strong>Inferred</strong> means the code constrains the reason but nobody wrote it; the observation is given first so you can disagree with the inference. <strong>Unknown</strong> means there is no evidence either way, which is reported rather than filled in. Roughly a third of the tuning constants in this repository fall in the third category, and that is one of the more useful things here.</p>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+<section>
+  <h2 class="sec">The shape of the system</h2>
+  <p class="seclabel">One paragraph before anything else makes sense</p>
+
+  <p class="body">Ground Control is a single-process Node HTTP server with a vanilla-JS browser client and an optional native macOS shell around both. It has no persistent store: on every request it walks a directory of projects, shells out to <code>git</code>, reads <code>ps</code> and <code>lsof</code>, and assembles the answer in memory behind a short-lived cache. The filesystem <em>is</em> the database, and everything the dashboard knows is re-derived rather than recorded. Four features are bolted onto that spine — the grid and document reader, Forge (artifact generation), Workbench (editors and agent detection), and Reclaim (moving dead folders to the Trash) — each specified in its own contract document and each, by construction, appended to the same <span class="path">server.js</span> and <span class="path">public/js/app.js</span> rather than woven into them.</p>
+
+  <h3>What the measured composition actually counts</h3>
+
+  <div class="comp"><div class="compbar" role="img" aria-label="Language composition: JavaScript 80%, CSS 10%, Markdown 4.6%, Swift 2.9%, HTML 1.3%, Shell 0.5%"><span style="width:80%;background:var(--c1)" title="JavaScript — 80%"></span><span style="width:10%;background:var(--c2)" title="CSS — 10%"></span><span style="width:4.6%;background:var(--c3)" title="Markdown — 4.6%"></span><span style="width:2.9%;background:var(--c4)" title="Swift — 2.9%"></span><span style="width:1.3%;background:var(--c5)" title="HTML — 1.3%"></span><span style="width:0.5%;background:var(--c6)" title="Shell — 0.5%"></span></div><ul class="complegend"><li><span class="sw" style="background:var(--c1)"></span><b>JavaScript</b> <span class="n">80% · 1.4 MB</span></li><li><span class="sw" style="background:var(--c2)"></span><b>CSS</b> <span class="n">10% · 183 KB</span></li><li><span class="sw" style="background:var(--c3)"></span><b>Markdown</b> <span class="n">4.6% · 82.5 KB</span></li><li><span class="sw" style="background:var(--c4)"></span><b>Swift</b> <span class="n">2.9% · 52.5 KB</span></li><li><span class="sw" style="background:var(--c5)"></span><b>HTML</b> <span class="n">1.3% · 23.4 KB</span></li><li><span class="sw" style="background:var(--c6)"></span><b>Shell</b> <span class="n">0.5% · 8.4 KB</span></li></ul></div><p class="note">The remaining 0.6% is spread across file types too small to list individually.</p>
+
+  <p class="body" style="margin-top:14px">Read that bar with one correction. <strong>Roughly two thirds of those bytes are a duplicate of the other third.</strong> <span class="path">GroundControl.app/</span> holds 25 files and 1.9 MB of the 2.9 MB total, and it is a built copy of <span class="path">server.js</span>, <span class="path">lib/</span>, <span class="path">public/</span> and <span class="path">package.json</span> that <span class="path">build-app.sh</span> places inside the bundle. It is listed in <span class="path">.gitignore</span> as a build artifact, yet the scanner counted it — because <span class="path">lib/util.js:30</span>'s <code>isIgnoredDir</code> skips <code>node_modules</code>, <code>*venv</code>, and dot-directories, and knows nothing about <code>.app</code> bundles. The interesting part is not the inflated number; it is that <strong>Ground Control measured itself with its own ignore list and the list had a hole in it</strong>. The real source tree is closer to 39 files and 1 MB.</p>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2 class="sec">How much reasoning this repository actually records</h2>
+  <p class="seclabel">Calibration — what can honestly be said and what cannot</p>
+
+  <p class="body">This is an unusually well-documented codebase by the standard that matters here: six ADR-shaped contract documents totalling ~72 KB, and 90 harvested comment blocks that explain a choice rather than restate the code. Several of them cite measurements taken on the author's own machine. That supports a long document.</p>
+
+  <p class="body">Two things it does <em>not</em> have, both of which bound what follows:</p>
+
+  <ul class="body">
+    <li><strong>No git history.</strong> The directory is not a repository, so there are zero commit messages and zero commit bodies. Every "why did this change" question has to be answered from a comment that survived, or not at all. Where a comment says a value "was 3 minutes" or "was 10 minutes", that is the only record of the previous value.</li>
+    <li><strong>98 of 140 named constants carry no explanatory comment.</strong> The harvest opened 56 of 56 candidate source files, so this is silence rather than an unscanned gap — the distinction the brief format deliberately preserves.</li>
+  </ul>
+
+  <div class="callout plain">
+    <h2>A note on provenance</h2>
+    <p>This document was produced by the code path it describes. The instruction that generated it is the string returned by <code>designPrompt()</code> in <span class="path">lib/house-style.js:374</span>, and the factual brief it worked from is the output of <code>buildBrief({kind:"design"})</code> in <span class="path">lib/brief.js</span>. That brief arrived already shed to the sixth of eight budget levels — <span class="path">lib/brief.js:1457</span> — with four design documents, forty comments and a trimmed constants table, which is why the citations below were checked against the files directly rather than taken from the brief alone.</p>
+  </div>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2 class="sec">The central bet: the standard library and nothing else</h2>
+  <p class="seclabel">Stated — CONTRACT.md, "Hard rules for every agent"</p>
+
+  <p class="body">Every system rests on one commitment the rest follows from. Here it is the first line of the first contract, and it is phrased as a prohibition rather than a preference:</p>
+
+  <div class="callout">
+    <h2>CONTRACT.md — hard rules</h2>
+    <p class="quote">"Node.js stdlib ONLY. No npm installs, no <code>package.json</code> dependencies, no CDN links, no external fonts. The whole thing must run offline with <code>node server.js</code>. Vanilla JS on the frontend. No frameworks, no build step."</p>
+  </div>
+
+  <p class="body" style="margin-top:16px">The manifest confirms it: <span class="path">package.json</span> has no <code>dependencies</code> and no <code>devDependencies</code> key at all, and <code>npm run check</code> is four invocations of <code>node --check</code> rather than a linter. What makes this a <em>bet</em> rather than an aesthetic is that it is expensive in four specific places, and the repository paid in all four.</p>
+
+  <ul class="body">
+    <li><strong>A markdown renderer written from scratch</strong> — <span class="path">public/js/markdown.js</span>, supporting GFM tables, nested lists, task lists, fenced code with highlighting, footnotes and reference links. The header states the security posture that justifies the cost as well as the constraint: <em>"every document handed to this module comes off the user's disk and is treated as hostile. Raw HTML in the source is NEVER passed through"</em> (<span class="path">public/js/markdown.js:10</span>). A dependency would have brought a configurable sanitiser; this brings a renderer that cannot be misconfigured because it has no pass-through mode.</li>
+    <li><strong>No test framework</strong> — <code>node --test test/*.test.js</code>, 39 tests, no install step.</li>
+    <li><strong>Git by subprocess, not by library</strong> — <span class="path">lib/git.js</span> runs <code>execFile</code> with an argv array, a 5 s timeout, and an environment carrying <code>GIT_TERMINAL_PROMPT=0</code>, <code>GIT_ASKPASS=echo</code> and <code>GIT_OPTIONAL_LOCKS=0</code> (<span class="path">lib/git.js:18–24</span>). The last of those is the one worth stealing: reading someone else's repository must not take its index lock.</li>
+    <li><strong>A 169 KB single-file frontend</strong> — <span class="path">public/js/app.js</span> carries routing, the grid, the detail view, the reader and all four features' UI as one ES module, because there is no bundler to split it.</li>
+  </ul>
+
+  <h3>The one time the rule was lifted, and what was still refused</h3>
+
+  <p class="body">The macOS app is the only place the zero-dependency rule was relaxed, and the contract records both the permission and the reasoning behind refusing to use it fully:</p>
+
+  <div class="callout">
+    <h2>CONTRACT-APP.md §0</h2>
+    <p class="quote">"The zero-dependency rule has been lifted by the user — but <strong>do not add Electron, Tauri, or an npm toolchain anyway</strong>. […] A native shell is ~2 MB against Electron's ~150 MB, and <strong>this machine has only ~7 GB of free disk</strong>, which settles it."</p>
+  </div>
+
+  <p class="body" style="margin-top:16px">That is a decision made on a machine-specific constraint and labelled as such. It is worth being precise about how weak the general form of this argument is: 150 MB against 7 GB is 2% of the disk. The reasoning is defensible for this laptop and this one app; a reader who copies "native shell beats Electron because of disk" without the 7 GB has copied the conclusion and left the premise behind. What <em>does</em> generalise is that the shell is genuinely thin — <span class="path">app/GroundControl.swift</span> is 52.5 KB and hosts an unmodified web app, so the cost of being wrong is one file.</p>
+
+  <dl class="facts">
+    <dt>Decision</dt><dd>Node standard library only, server and client; a hand-written Swift/AppKit shell where a native app is wanted.</dd>
+    <dt>Forces</dt><dd>Must run offline with one command; must survive a moved or deleted checkout; a constrained disk; the author's stated preference for no build step.</dd>
+    <dt>Alternative</dt><dd>Express + a markdown library + a test framework + a bundler. Perhaps 300 fewer lines of framework-shaped code in <span class="path">lib/</span>, at the cost of a lockfile, an install step, and a supply chain reaching a tool that reads every file in every project on the disk.</dd>
+    <dt>Consequence</dt><dd>Cheap: distribution, auditability, and offline operation. Expensive: the markdown renderer is now a permanent maintenance surface; there is no framework to absorb a routing or state change; and the frontend cannot be split without inventing a build step, which the contract forbids.</dd>
+  </dl>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2 class="sec">The second bet: the contract is the coordination mechanism</h2>
+  <p class="seclabel">Stated — file-ownership tables in all six contracts</p>
+
+  <p class="body">Every contract in this repository opens with the same structure: a file ownership table assigning each file to a named agent, and an instruction not to touch anyone else's. <span class="path">CONTRACT.md §1</span> assigns Agent A the backend, B the frontend, C the markdown module. <span class="path">CONTRACT-FORGE.md §1</span> adds D, E and F, and states the rule that shaped the resulting code more than any other line in the repository:</p>
+
+  <div class="callout">
+    <h2>CONTRACT-FORGE.md §1</h2>
+    <p class="quote">"Agents D and E both touch <code>server.js</code> / <code>app.js</code> only in their own areas — <strong>append new code, never restructure existing code.</strong>"</p>
+  </div>
+
+  <p class="body" style="margin-top:16px">This was written for parallel authors working from a spec without seeing each other's diffs. Nothing states that the "agents" were language models, but the shape of the constraint — no merge conflicts, no shared refactors, a written interface instead of a conversation — only makes sense when the authors cannot negotiate. <span class="pill accent" style="display:inline-block">Inferred</span></p>
+
+  <p class="body">The consequences are visible in the file structure, and they are exactly what the rule asks for:</p>
+
+  <ul class="body">
+    <li><span class="path">server.js</span> is 56.9 KB with three banner-delimited feature sections stacked below the original server, each announcing its own compliance: <em>"Appended below the original server. Nothing above this line was restructured; <code>route()</code> gained one dispatch line for <code>/api/forge/</code>"</em> (<span class="path">server.js:486–496</span>).</li>
+    <li>Comments cite contract sections the way code usually cites tickets — <code>// (Workbench §4)</code>, <code>// contract §4</code>, <code>// contract §2.5</code>. The spec is treated as the authority, not the code.</li>
+    <li>Cross-feature integration happens through deliberately narrow seams. <span class="path">lib/jobs.js</span> "knows nothing about subprocesses or HTML" and receives a canceller callback from <span class="path">lib/generate.js</span> instead of a pid, "which keeps the dependency one-directional" (<span class="path">lib/jobs.js:4–7</span>).</li>
+  </ul>
+
+  <p class="body">And the cost is equally visible. Append-only growth means the modules that gained the most features are the two largest files, and it means a stale comment is <em>safer</em> to leave than to fix — you can see that outcome in the drift section below. It also means <span class="path">public/js/app.js</span> is a single 169 KB module carrying four features' UI, which no future contributor can split without violating either the no-build-step rule or the no-restructuring rule.</p>
+
+  <dl class="facts">
+    <dt>Decision</dt><dd>Specify each feature completely in its own contract document, assign every file a single owner, and forbid restructuring anyone else's code.</dd>
+    <dt>Forces</dt><dd>Multiple authors working in parallel with no shared working tree, no git history to merge, and no way to ask each other a question mid-build.</dd>
+    <dt>Alternative</dt><dd>One author, sequential features, refactoring freely. Smaller files and no stale rules — at the cost of the parallelism the contracts exist to buy.</dd>
+    <dt>Consequence</dt><dd>Features landed independently and the seams between them are unusually explicit. In exchange, two files are now monoliths, and correcting a rule that has changed requires editing prose in three places (the contract, the module docblock, the README) that nothing keeps in sync.</dd>
+  </dl>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2 class="sec">The trust boundary, and its three deliberate exceptions</h2>
+  <p class="seclabel">Stated — CONTRACT-FORGE.md §2, CONTRACT-WORKBENCH.md §3a, CONTRACT-RECLAIM.md §0</p>
+
+  <p class="body">Any tool that points itself at a folder full of other people's work has to decide what it is allowed to change. Ground Control's answer is that the default is <em>nothing</em>, and each departure is named, guarded and written down. There are exactly three, and they were added in increasing order of danger.</p>
+
+  <h3>1. Writing a generated document into a project</h3>
+  <p class="body">Generation writes only to <span class="path">&lt;ground-control&gt;/.forge/&lt;projectId&gt;/&lt;jobId&gt;.html</span>. Saving into the project is a separate POST that re-runs the path gates, accepts <code>.html</code> only, and returns <code>409</code> with the existing file's size and mtime rather than overwriting (<span class="path">server.js:939–947</span>). The model never writes the file; Ground Control does.</p>
+
+  <h3>2. Moving a folder to the Trash</h3>
+  <p class="body">Reclaim's governing rule is stated twice, in the contract and at the top of the module: nothing is ever permanently deleted, the destination is <code>~/.Trash</code>, and the move is <code>fs.rename</code>. The contract also records a rejected mechanism <em>and the experiment that rejected it</em>:</p>
+
+  <div class="callout">
+    <h2>CONTRACT-RECLAIM.md §0</h2>
+    <p class="quote">"<strong>Do not use <code>osascript</code>/Finder automation</strong> — it triggers a macOS TCC prompt that hangs a headless server indefinitely (this was tested; it deadlocked until killed)."</p>
+  </div>
+
+  <p class="body" style="margin-top:16px">Two smaller decisions inside the trash path are worth lifting out. The manifest is written to <span class="path">.forge/reclaim-log.jsonl</span> <em>before</em> anything moves, and a failure to write it aborts the move — <em>"No durable record ⇒ nothing moves. The log is the point"</em> (<span class="path">lib/reclaim.js:1014</span>). And the <code>EXDEV</code> fallback copies, fingerprints both trees, compares file/byte/dir/link counts, and only then removes the original (<span class="path">lib/reclaim.js:868–915</span>). The single <code>fs.rm</code> in the file is reachable only after a verified copy.</p>
+
+  <h3>3. Sending SIGTERM to a coding agent</h3>
+  <p class="body">This one replaced an absolute rule, and the contract says so in the open rather than quietly editing the old text:</p>
+
+  <div class="callout">
+    <h2>CONTRACT-WORKBENCH.md §3a</h2>
+    <p class="quote">"<strong>The single exception is <code>POST /api/agents/stop</code>.</strong> It was added deliberately, replacing an earlier absolute 'Ground Control never signals a process' rule. […] The absolute rule is replaced by four guards, all of which are required."</p>
+  </div>
+
+  <p class="body" style="margin-top:16px">The guards are implemented in the order the contract lists them, in <span class="path">server.js:1192–1231</span>: the pid must already be attributed to that project by a fresh sweep; the session Ground Control itself is running from is refused by ancestry (<code>isSelf</code>); the pid is re-verified against a live <code>ps</code>/<code>lsof</code> immediately before the signal, bypassing every cache; and only SIGTERM is ever sent. The structural move underneath is the one to take away: <strong>the <code>process.kill</code> call does not live in <span class="path">lib/agents.js</span></strong>. The module's header states why — <em>"the <code>process.kill</code> lives in the HTTP handler, so this module's observe-only property stays intact and testable"</em> (<span class="path">lib/agents.js:9–13</span>). A property you can assert by grepping one file is worth more than the same property spread across two.</p>
+
+  <h3>The gate all three share</h3>
+  <p class="body">Every path that crosses from a URL to the filesystem goes through one function, and it is deliberately redundant:</p>
+
+<pre><code> * Three independent gates:
+ *   1. syntactic — no absolute paths, no NUL, no `..` segment
+ *   2. lexical   — path.resolve() result must be under the root
+ *   3. physical  — fs.realpath() of the target (and of the root) must still be
+ *                  under the real root, which defeats symlink escapes</code></pre>
+  <p class="note"><span class="path">lib/util.js:246–254</span>. Gate 3 is the one that earns its place: gates 1 and 2 are string manipulation, and a symlink defeats string manipulation. When the target does not exist yet — the save path — the function realpaths the parent instead (<span class="path">lib/util.js:280–283</span>).</p>
+
+  <h3>The boundary that is not there</h3>
+  <p class="body"><span class="pill warn" style="display:inline-block">Unknown</span> <code>server.listen(ARGS.port)</code> at <span class="path">server.js:446</span> passes no host, so Node binds all interfaces. There is no authentication, no token, and no <code>Origin</code> or <code>Referer</code> check anywhere in <span class="path">server.js</span>; <code>readJsonBody</code> (<span class="path">server.js:519</span>) parses the body without inspecting <code>Content-Type</code>. The POST surface includes launching a local editor and moving a folder to the Trash. <strong>No contract, comment or README line states a decision about the bind address or about cross-origin requests</strong> — the closest the repository comes is <span class="path">app/GroundControl.swift:201</span>, which probes for a free port "on 0.0.0.0 because that is what <code>server.listen(port)</code> does", noting the behaviour without commenting on it. The threat model is presumably "single-user machine, trusted network", but that is my reconstruction, not the author's statement, and it is the one place in this codebase where a load-bearing security assumption is unwritten.</p>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2 class="sec">Talking to a model as a subprocess</h2>
+  <p class="seclabel">Stated — CONTRACT-FORGE.md §0, §0b, §4; lib/generate.js</p>
+
+  <p class="body">Forge needs a frontier model and the machine has no API key. The chosen mechanism is to shell out to the already-authenticated <code>claude</code> CLI in headless mode. That single choice generates most of the interesting engineering in <span class="path">lib/generate.js</span>, and it is a good worked example of a general problem: <em>when you borrow someone else's authenticated process, you inherit their configuration surface too.</em></p>
+
+  <dl class="facts">
+    <dt>Decision</dt><dd>Spawn the local <code>claude</code> CLI with <code>child_process.spawn</code> and an argv array; parse its <code>stream-json</code> events; take the artifact off stdout.</dd>
+    <dt>Forces</dt><dd>No <code>ANTHROPIC_API_KEY</code> on the machine; the zero-dependency rule forbids an SDK; the artifact must be verifiable against real code, which requires the model to have file tools.</dd>
+    <dt>Alternative</dt><dd>An HTTP client against the API. It would need a key (which the user does not have and the contract forbids introducing), and it would have no repository tool access, so the artifact could only be as good as the brief.</dd>
+    <dt>Consequence</dt><dd>Generation works with zero configuration and zero dependencies, and is grounded in files the model actually read. In exchange, Forge is coupled to one CLI's argv and event schema, and a version bump elsewhere on the machine can break it silently.</dd>
+  </dl>
+
+  <h3>The environment is stripped, not just left alone</h3>
+  <p class="body">The most transferable detail here is a deletion. <code>childEnv()</code> copies <code>process.env</code> and removes six variables:</p>
+
+<pre><code>function childEnv() {
+  const env = Object.assign({}, process.env);
+  delete env.ANTHROPIC_API_KEY;
+  delete env.ANTHROPIC_AUTH_TOKEN;
+  delete env.ANTHROPIC_BASE_URL;
+  // Related overrides that would also redirect billing away from the subscription.
+  delete env.ANTHROPIC_API_URL;
+  delete env.CLAUDE_CODE_USE_BEDROCK;
+  delete env.CLAUDE_CODE_USE_VERTEX;
+  env.CLAUDE_CODE_ENTRYPOINT = 'ground-control-forge';
+  return env;
+}</code></pre>
+  <p class="note"><span class="path">lib/generate.js:244–255</span>. The reason is stated at <span class="path">lib/generate.js:238–242</span> and in <span class="path">CONTRACT-FORGE.md §0b.2</span>: a key present in the parent shell would shadow the OAuth profile and "silently move generation onto metered billing". The contract explicitly instructs "Comment it as such", and the code does. The implementation went further than the contract's three variables and removed three more — an inherited-environment failure that is invisible when it happens, because the run succeeds and only the bill differs. <code>--bare</code> is likewise never passed, with a comment at the argv site saying why (<span class="path">lib/generate.js:677</span>).</p>
+
+  <h3>Two locks on the same door</h3>
+<pre><code>    '--permission-mode', 'acceptEdits',
+    // Read-only tool surface (contract §2.5). Belt AND braces: allow the three
+    // read tools, and explicitly deny everything that could mutate the repo or
+    // reach the network. Ground Control writes the file, never the model.
+    '--disallowedTools', 'Write', 'Edit', 'NotebookEdit', 'Bash', 'Task', 'WebFetch', 'WebSearch',
+    '--allowedTools', 'Read', 'Glob', 'Grep',</code></pre>
+  <p class="note"><span class="path">lib/generate.js:669–674</span>. Note the tension the comment resolves: <code>--permission-mode acceptEdits</code> is a permissive setting, mandated by <span class="path">CONTRACT-FORGE.md §4</span>'s spawn contract, so the deny list is what actually holds. An allowlist alone would depend on the CLI's default-deny behaviour staying default-deny across versions. The contract asked for the allowlist; the implementation added the denylist and explained why in the same breath.</p>
+
+  <h3>What happens when the subprocess hangs</h3>
+  <p class="body">Any process that shells out to another program has to decide what a hang looks like. Forge gives it 20 minutes, then SIGTERM, then SIGKILL 10 seconds later (<span class="path">lib/generate.js:721–727</span>) — and signals the whole process group, because the child is spawned <code>detached: true</code>:</p>
+
+  <div class="callout plain">
+    <h2>lib/generate.js:692–695</h2>
+    <p class="quote">"Its own process group, so cancel/timeout can signal the whole tree. Without this a grandchild keeps the stdout pipe open after the parent is killed and the job never reaches a terminal state."</p>
+  </div>
+
+  <p class="body" style="margin-top:16px">The 20 minutes is one of the few numbers in this codebase with a recorded history: <em>"The design-rationale kind reads far more of the repository than onboarding does […] and 10 minutes was cutting long runs off mid-work"</em> (<span class="path">lib/generate.js:29–31</span>). The trade the author accepted is the usual one and is not hedged anywhere: a slow-but-working run and a wedged run are indistinguishable for twenty minutes.</p>
+
+  <h3>The rule that a rationale document cannot be faked</h3>
+  <p class="body">Forge has two axes — tier (how the document is made) and kind (which document it is) — and exactly one place where they are not orthogonal. The design kind refuses to run on any tier except <code>authored</code>, and returns <code>400</code> rather than downgrading:</p>
+
+  <div class="callout">
+    <h2>CONTRACT-FORGE.md §0</h2>
+    <p class="quote">"The <code>template</code> tier involves no model at all, and rationale cannot be derived from repository facts — no amount of file-walking tells you <em>why</em> a timeout is 800ms. […] Both fail the same requirement: <strong>a rationale document must be able to check its claims against the actual code</strong>, because its defining failure mode is inventing a plausible motive, and an invented motive is unfalsifiable."</p>
+  </div>
+
+  <p class="body" style="margin-top:16px">The onboarding kind falls back to the deterministic tier when the CLI is missing; the design kind has no fallback at all and fails. This is the clearest statement of judgement in the whole repository: <strong>a feature that cannot meet its own quality bar is better absent than degraded</strong>, because the degraded version of this particular document is indistinguishable from the good one. The implementation matches — <span class="path">lib/generate.js:610</span> branches on <code>docKind === 'design'</code> for the prompt only, keeping the spawn identical, and there is no design equivalent of <span class="path">lib/artifact-template.js</span>.</p>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2 class="sec">The local tier: a measurement that settled an architecture</h2>
+  <p class="seclabel">Stated — CONTRACT-LOCAL.md §0, lib/local.js:8–25</p>
+
+  <p class="body">This is the best-evidenced decision in the repository, and the one most worth stealing. The obvious way to add an offline generation tier is to ask a local model for the HTML page. The author tried that, on this machine, before designing anything:</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Asked for</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td><b>JSON prose fields, schema-constrained</b></td><td>Accurate. Caught that <code>pandas</code>/<code>matplotlib</code> were declared but unused, flagged a hardcoded key, put three real gaps in <code>unknowns</code>.</td></tr>
+        <tr><td><b>The whole HTML artifact, free-form</b></td><td>Structurally valid but <b>invented behaviour</b> — claimed a 7-line script doing <code>urlopen</code> + <code>pprint</code> was "cleaning it and preparing it for statistical regression modeling".</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">Quoted from <span class="path">CONTRACT-LOCAL.md §0</span>. Same model, same input. The contract's own summary: "Constrained mode told the truth; free-form embellished."</p>
+
+  <p class="body" style="margin-top:16px">The architecture follows directly and is stated as non-negotiable at <span class="path">lib/local.js:8–14</span>: <strong>the local model never produces the document.</strong> It fills seven bounded prose slots returned as schema-validated JSON; <span class="path">lib/artifact-template.js</span> renders the page exactly as it does for the model-free tier. Every command, path, statistic, tree and heatmap comes from the deterministic brief — "the model is never asked for them, so it cannot invent them". There is no agentic tool loop, because "small models fail worst in that shape".</p>
+
+  <p class="body">Then a second layer, for the prose the model <em>does</em> write: <span class="path">CONTRACT-LOCAL.md §3</span> requires extracting every path-like and command-like token from the output, checking it against the brief and against disk, and <strong>dropping the entire sentence containing an unverifiable path</strong> rather than silently deleting the token — "because a confident wrong path is worse than a shorter paragraph". The count of dropped sentences is surfaced on the page.</p>
+
+  <p class="body">And a finding that inverts the usual instinct: <em>"both models did well on <code>groupStat</code> (12.8 KB brief) and poorly on <code>pitwall</code> (3 KB brief). <strong>Brief quality dominates model size</strong> — so spend effort on grounding, not on a bigger model"</em> (<span class="path">CONTRACT-LOCAL.md §0</span>). That is why <span class="path">lib/brief.js</span> is the largest module in <span class="path">lib/</span> at 76.4 KB while the client that talks to the model is 40% of its size.</p>
+
+  <dl class="facts">
+    <dt>Decision</dt><dd>Constrain the small model to schema-validated prose slots inside a deterministic template, then verify its output against the filesystem before rendering.</dd>
+    <dt>Forces</dt><dd>An 8B local model measurably invents behaviour when given a free-form generative task; offline operation was wanted anyway.</dd>
+    <dt>Alternative</dt><dd>Ask for the page and post-process it. Rejected on measured evidence, not on principle.</dd>
+    <dt>Consequence</dt><dd>The local tier can only ever produce the onboarding shape, because that is the shape the template renders — which is precisely the reason <span class="path">CONTRACT-FORGE.md §0</span> gives for refusing to let the design kind use it: "It is the wrong shape and it is blind."</dd>
+  </dl>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2 class="sec">Every timeout, cache and budget</h2>
+  <p class="seclabel">Where the design intent is densest and most often unwritten</p>
+
+  <p class="body">Ground Control has 140 named constants; 98 have no explanatory comment. The ones that <em>do</em> are unusually good — several record a measurement and a previous value. The table below covers the load-bearing ones, with what each protects and what goes wrong in each direction. The evidence column is the point: it separates numbers with a recorded reason from numbers that merely exist.</p>
+
+  <div class="tw">
+    <table>
+      <thead>
+        <tr><th>Constant</th><th>Value</th><th>What it protects</th><th>Wrong in each direction</th><th>Evidence</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>CACHE_TTL_MS</b><div class="sub">server.js:80</div></td>
+          <td class="n">30 s</td>
+          <td>The filesystem from a 32k-dirent re-walk on every SSE poll tick.</td>
+          <td>Too low: the agent poller's <code>getScan(false)</code> lands on alternating sides of the boundary and forces a synchronous full scan every ~10 s. Too high: nothing, because explicit-refresh paths pass <code>fresh=true</code>.</td>
+          <td><span class="pill accent">Stated</span></td>
+        </tr>
+        <tr>
+          <td><b>PROC_TTL_MS</b><div class="sub">lib/agents.js:107</div></td>
+          <td class="n">6 s</td>
+          <td>~4–5% of a CPU core, continuously, at idle.</td>
+          <td>Too low (it was 2.5 s): the cache expires before every 5 s poll, so each poll pays a full <code>ps</code>+<code>lsof</code> sweep — measured at 226 ms of work versus ~0 ms on a hit. Too high: a newly-started agent takes longer to appear.</td>
+          <td><span class="pill accent">Stated</span></td>
+        </tr>
+        <tr>
+          <td><b>AGENT_POLL_MS</b><div class="sub">server.js:1003</div></td>
+          <td class="n">5 s</td>
+          <td>How fast a live-agent change reaches the dashboard.</td>
+          <td>Too low: multiplies the sweep cost and breaks the TTL relationship above. Too high: the pulse on a card lags reality.</td>
+          <td><span class="pill">Inferred</span></td>
+        </tr>
+        <tr>
+          <td><b>AGENT_BUDGET_MS</b><div class="sub">server.js:1001 · lib/agents.js:42</div></td>
+          <td class="n">1.5 s</td>
+          <td>The sub-second scan. An over-budget sweep returns partial data and sets <code>budgetExceeded</code> rather than delaying the response.</td>
+          <td>Too low: agent state is routinely incomplete. Too high: a slow <code>lsof</code> becomes a slow dashboard.</td>
+          <td><span class="pill accent">Stated</span></td>
+        </tr>
+        <tr>
+          <td><b>ACTIVE_WINDOW_MS</b><div class="sub">lib/agents.js:75</div></td>
+          <td class="n">60 s</td>
+          <td>The claim "something is happening right now".</td>
+          <td>Too low: the indicator flickers off during a slow model turn. Too high (it was 3 min): it means "someone used this recently", which is a different claim, and the light stays on for parked sessions.</td>
+          <td><span class="pill accent">Stated</span></td>
+        </tr>
+        <tr>
+          <td><b>OPEN_WINDOW_MS</b><div class="sub">lib/agents.js:93</div></td>
+          <td class="n">90 min</td>
+          <td>Against the module's "single biggest source of false positives": seven <code>claude</code> processes sat in one project with nothing written for two to three days, and one for six.</td>
+          <td>Too low: a real session that paused for lunch disappears. Too high: yesterday's abandoned VS Code tab is reported as an agent.</td>
+          <td><span class="pill accent">Stated</span></td>
+        </tr>
+        <tr>
+          <td><b>DEBOUNCE_MS</b><div class="sub">server.js:268</div></td>
+          <td class="n">800 ms</td>
+          <td>Coalescing a burst of <code>fs.watch</code> events (and agent and Forge state changes) into one rescan + one SSE push.</td>
+          <td>Too low: a <code>git checkout</code> triggers a storm of full rescans. Too high: the dashboard visibly lags a save.</td>
+          <td><span class="pill warn">Unknown</span></td>
+        </tr>
+        <tr>
+          <td><b>TIMEOUT_MS</b><div class="sub">lib/generate.js:32</div></td>
+          <td class="n">20 min</td>
+          <td>A wedged <code>claude</code> subprocess holding a job forever.</td>
+          <td>Too low (it was 10 min): long design runs were "cut off mid-work". Too high: a hung job is indistinguishable from a working one for longer.</td>
+          <td><span class="pill accent">Stated</span></td>
+        </tr>
+        <tr>
+          <td><b>SIGKILL_GRACE_MS</b><div class="sub">lib/generate.js:33</div></td>
+          <td class="n">10 s</td>
+          <td>The gap between asking the process group to stop and forcing it.</td>
+          <td>Too low: the CLI is killed before it can flush. Too high: cancel feels broken.</td>
+          <td><span class="pill warn">Unknown</span></td>
+        </tr>
+        <tr>
+          <td><b>TAIL_BYTES</b><div class="sub">lib/agents.js:48</div></td>
+          <td class="n">256 KB</td>
+          <td>Reading a 9 MB transcript into memory on every sweep.</td>
+          <td>Too low: the tail may not contain a complete JSON line, so the current action is lost. Too high: the sweep budget is spent on I/O.</td>
+          <td><span class="pill accent">Stated</span></td>
+        </tr>
+        <tr>
+          <td><b>SNIPPET_MAX</b><div class="sub">lib/agents.js:50</div></td>
+          <td class="n">120 chars</td>
+          <td>Privacy. Every string leaving the module passes through <code>snippet()</code>.</td>
+          <td>Too low: labels stop being informative. Too high: the dashboard starts displaying the user's conversations.</td>
+          <td><span class="pill accent">Stated</span></td>
+        </tr>
+        <tr>
+          <td><b>GIT_TIMEOUT_MS</b><div class="sub">lib/git.js:15</div></td>
+          <td class="n">5 s</td>
+          <td>One pathological repository stalling the whole scan; every failure resolves to <code>null</code> and degrades field-by-field.</td>
+          <td>Too low: large repos report missing history. Too high: a hung <code>git</code> holds a scan slot.</td>
+          <td><span class="pill accent">Stated</span></td>
+        </tr>
+        <tr>
+          <td><b>SUBSTANTIAL_FILES / _BYTES</b><div class="sub">lib/reclaim.js:56–57</div></td>
+          <td class="n">40 / 20 MB</td>
+          <td>Against calling a folder with real work in it "dead".</td>
+          <td>Too low: ordinary folders are blocked and the feature is useless. Too high: a folder with real content becomes a removal candidate.</td>
+          <td><span class="pill">Inferred</span></td>
+        </tr>
+        <tr>
+          <td><b>MARKDOWN_BUDGET / DESIGN_</b><div class="sub">lib/brief.js:44–45</div></td>
+          <td class="n">40 KB / 90 KB</td>
+          <td>The model's context, and the ordering of what gets dropped first.</td>
+          <td>Too low: the author's own reasoning is shed and the document loses its citations. Too high: the prompt crowds out the model's own reading.</td>
+          <td><span class="pill accent">Stated</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout warnish" style="margin-top:18px">
+    <h2>Two constants that must hold a relationship to each other</h2>
+    <p>The scan cache and the process sweep cache are both sized <em>relative to the SSE poll interval</em>, and both fail quietly rather than loudly if the relationship is broken. <strong>PROC_TTL_MS (6000) must stay above AGENT_POLL_MS (5000)</strong> — "drop it back under 5000 and the cache silently stops working" (<span class="path">lib/agents.js:95–106</span>). <strong>CACHE_TTL_MS (30000) must sit comfortably above AGENT_POLL_MS</strong> for the same reason (<span class="path">server.js:71–79</span>). The two constants live in different files, are not imported by one another, and <strong>nothing asserts the relationship</strong> — no test, no runtime check. Someone tuning the poll interval to 8 s to reduce load would silently restore the 226 ms-per-poll behaviour these comments were written to prevent, and no test would fail.</p>
+  </div>
+
+  <div class="callout warnish" style="margin-top:14px">
+    <h2>The 800 ms debounce is specified but never justified</h2>
+    <p><span class="path">CONTRACT.md §2</span> fixes the value — "debounce <strong>800 ms</strong>, re-scan, then emit" — and <span class="path">server.js:268</span> implements it. Three separate comments reference it as "the existing 800 ms debounce" when reusing it for agent and Forge events. <strong>No document, comment or measurement in this repository explains why 800 and not 200 or 2000.</strong> It is a specification, not a rationale, and the difference matters: every later change treats it as settled because it appears in a contract.</p>
+  </div>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2 class="sec">Invariants: what the code enforces, and what it merely assumes</h2>
+  <p class="seclabel">The assumed ones are the interesting ones</p>
+
+  <p class="body"><strong>Enforced, with a mechanism you can point at:</strong></p>
+  <ul class="body">
+    <li><strong>No path escapes its root.</strong> <code>resolveInside</code> throws <code>PathError</code> (403); every file-reading route and the editor launcher call it, and <span class="path">lib/editors.js:9–12</span> re-checks containment after the caller has already done so, "so a mistake upstream still cannot launch an editor outside the root".</li>
+    <li><strong>Credentials are never read.</strong> <code>isSensitive()</code> gates every file read in <span class="path">lib/brief.js</span> and is "deliberately broad: a false positive costs us one TODO sample, a false negative leaks a credential" (<span class="path">lib/brief.js:51–55</span>). A test builds a fixture with a <code>.env</code>, a <code>creds.py</code> and a <code>.pem</code> and fails if the secret value appears anywhere in the brief.</li>
+    <li><strong>Nothing is deleted.</strong> One <code>fs.rm</code> in the codebase, reachable only after a verified cross-volume copy; no bulk endpoint; no keyboard shortcut; confirmation requires typing the folder name exactly (<span class="path">lib/reclaim.js:974</span>).</li>
+    <li><strong>Invalid HTML is never staged as success.</strong> <code>validateHtml()</code> checks size, <code>&lt;title&gt;</code>, <code>&lt;style&gt;</code> and the absence of any external reference before a job can reach <code>done</code>; failures keep the raw output at <span class="path">&lt;jobId&gt;.raw.txt</span> (<span class="path">lib/generate.js:279–290</span>).</li>
+    <li><strong>Tests cannot touch real projects.</strong> <code>fixtureRoot()</code> throws if the path it created is not under the OS temp directory (<span class="path">test/helpers.js:22–24</span>) — the right guard for a suite that exercises a Trash operation.</li>
+  </ul>
+
+  <p class="body"><strong>Assumed, with nothing enforcing it:</strong></p>
+  <ul class="body">
+    <li><strong>The cache-TTL ordering above.</strong> Documented in prose in two files, checked nowhere.</li>
+    <li><strong>Forge's own subprocess is excluded from the agent sweep.</strong> <code>excludePids: generate.forgePids()</code> is passed at four call sites; miss one and Ground Control reports itself as the user's agent — which also makes the project un-trashable, since <code>agent-running</code> is a blocker. The pid is registered "before any await so an agent sweep racing the spawn cannot see this process without knowing it is ours" (<span class="path">lib/generate.js:701–703</span>), which closes the race but not the missed-call-site case.</li>
+    <li><strong>Everything interpolated into generated HTML is escaped.</strong> <span class="path">lib/artifact-parts.js:1</span> states the rule in capitals as "non-negotiable", and it is enforced by convention plus one hostile-content test — not by types or by a template engine that escapes by default.</li>
+    <li><strong>The scanned root contains projects, not one giant repository.</strong> Reclaim checks this explicitly with <code>not-a-direct-child</code> and <code>inside-other-repo</code> hard blockers; the scanner does not.</li>
+  </ul>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2 class="sec">Where the design is under strain</h2>
+  <p class="seclabel">Places the recorded reasoning no longer matches the code</p>
+
+  <p class="body">The append-only rule protects working code and does nothing for prose. Four of the five items below are the same failure: a rule changed, and the sentence describing the old rule stayed.</p>
+
+  <h3>Reclaim's module header describes a rule the module no longer has</h3>
+  <p class="body">The docblock at <span class="path">lib/reclaim.js:18–22</span> reads: <em>"BLOCKERS ARE HARD REFUSALS. A non-empty <code>blockers</code> array makes removal impossible. <code>trashProject()</code> re-runs the assessment at call time and refuses on any blocker."</em> The code at <span class="path">lib/reclaim.js:967–971</span> does something else:</p>
+
+<pre><code>  if (soft.length &amp;&amp; opts.force !== true) {
+    throw new ReclaimError(409, 'this project has blockers that must be overridden explicitly', {
+      blockers: soft, hardBlockers: [], softBlockers: soft, overridable: true, assessment,
+    });
+  }</code></pre>
+  <p class="note">Only three codes are in <code>HARD_BLOCKERS</code> (<span class="path">lib/reclaim.js:372–376</span>): <code>is-ground-control</code>, <code>not-a-direct-child</code>, <code>inside-other-repo</code>. Everything else — uncommitted changes, unpushed commits, no remote, stashed work, a running agent — is a soft blocker liftable with <code>force: true</code>. <span class="path">CONTRACT-RECLAIM.md</span> documents the new model <em>and</em> keeps the old one under a heading marked "Original note", which is honest but leaves two contradictory tables in one file. <span class="path">README.md:133</span> still describes the old behaviour: "Removal is refused outright — not warned about". The safety story is unchanged (the destination is still the Trash, every override is logged with the codes it lifted), but a reader who trusts the docblock will believe a running agent makes removal impossible, and it does not.</p>
+
+  <h3>The Workbench contract contradicts itself in the same file</h3>
+  <p class="body"><span class="path">CONTRACT-WORKBENCH.md §3a</span> introduces <code>POST /api/agents/stop</code> and explains its four guards. Eighty lines later, <span class="path">CONTRACT-WORKBENCH.md:183–184</span> still states, in bold: <em>"Never kill or signal an agent process. Ground Control observes; it does not manage. No endpoint may terminate a PID."</em> <span class="path">README.md:119</span> repeats the old claim as well. The code implements §3a.</p>
+
+  <h3>The scan cache TTL diverged from its specification, with a reason</h3>
+  <p class="body"><span class="path">CONTRACT.md §2</span> says "serve <code>/api/projects</code> from cache when it is &lt; 5 s old"; <span class="path">README.md:198</span> says "Results are cached 5s". The code uses 30 s and carries the eight-line comment quoted earlier explaining exactly why 5 s was wrong once the agent poller existed. This is the healthy version of drift — the implementation won on measured grounds and wrote down why — but nothing propagated it back, so the contract now understates the staleness a client may see by 6×.</p>
+
+  <h3>A safety test asserts on source text, not behaviour</h3>
+<pre><code>  const src = await import('node:fs').then((fs) =>
+    fs.readFileSync(new URL('../lib/agents.js', import.meta.url), 'utf8'));
+  assert.match(src, /ACTIVE_WINDOW_MS/, 'the recency window must exist');
+  assert.match(src, /a\.live &gt; 0 &amp;&amp; a\.active &gt; 0/,
+    'state "working" must require BOTH a live process and recent transcript activity');</code></pre>
+  <p class="note"><span class="path">test/safety.test.js:78–83</span>. The regression it guards is real and documented right above it (12 of 13 processes reported as "working" with transcripts last written 23–62 hours earlier). But the assertion passes if <code>ACTIVE_WINDOW_MS</code> is changed to 60 hours, and fails if the expression is reformatted across two lines. It pins the source, not the property.</p>
+
+  <h3>Two directory walks, two orders, one explanation</h3>
+  <p class="body"><span class="path">lib/brief.js:122–126</span> explains its queue-based traversal at length: <em>"Breadth-first on purpose. A depth-first walk of animAgent burns the entry budget inside its 19k-file fixture tree and never reaches Sources/, which silently loses the real entry points."</em> <span class="path">lib/scan.js:97–99</span> walks with <code>stack.pop()</code> — depth-first — under a 20,000-entry budget, half of <span class="path">brief.js</span>'s. <span class="pill accent" style="display:inline-block">Inferred</span> The consequence differs (scan needs counts, not entry points, so truncation costs accuracy rather than correctness) and that may be exactly why the author did not change it — but nothing says so, and the two files sit two directories apart with the hazard explained in only one of them.</p>
+
+  <h3>A smaller one: the shedding notes describe the plan, not the reality</h3>
+  <p class="body">Each budget level in <span class="path">lib/brief.js:1446–1465</span> carries a fixed <code>dropped</code> string. The brief that produced this document reported "design evidence trimmed: 4 documents, 40 comments, 15 commit bodies" — in a directory that is not a git repository and has no commit bodies at all. The note describes the cap that was applied, not what was actually lost, in a section of the brief headed "What this brief could NOT determine".</p>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2 class="sec">What this design costs</h2>
+  <p class="seclabel">Unsentimental</p>
+
+  <ul class="body">
+    <li><strong>It is macOS-only, structurally.</strong> Not by configuration — by mechanism. <code>ps -ax -o ... comm=</code> and <code>lsof -Fn</code> for agent detection, <code>~/.Trash</code> plus <code>fs.rename</code> for Reclaim, <code>open -a</code> for every editor, <code>sips</code>/<code>iconutil</code> for the icon, AppKit and <code>WKWebView</code> for the shell. Porting is not a compatibility layer; it is a rewrite of four modules.</li>
+    <li><strong>It scales to a folder, not to a fleet.</strong> Every request re-walks the filesystem; there is no index and no persistence. The stated numbers — a full scan of 19 projects in ~0.55 s, ~800 ms with agents — are the operating point the caches were tuned around. Two hundred projects would multiply the walk, the per-project <code>git</code> subprocesses, and the <code>lsof</code>-per-pid step together, and the 1.5 s agent budget would be exceeded on every scan rather than never.</li>
+    <li><strong>The frontend cannot be split.</strong> 169 KB of <span class="path">app.js</span> and 183 KB of CSS ship as-is, ungzipped by the server, on every load. That is fine over loopback and would be indefensible anywhere else — which is a coherent position for a localhost tool, provided nobody later wants it to be anything else.</li>
+    <li><strong>Forge is coupled to one CLI's surface.</strong> Nine argv flags, a <code>stream-json</code> event schema, a <code>result</code> event's field names, and a rate-limit event shape. The parser skips malformed lines rather than failing, so a schema change degrades to a job that produces no progress and then no artifact.</li>
+    <li><strong>The design-kind guarantee is absolute in the unhelpful direction.</strong> No <code>claude</code> CLI means no design document, ever, with no partial fallback. That is the stated intent, and it is the right call for correctness; it also means the feature is unavailable exactly when the machine is offline, which is when a local dashboard is most likely to be the only tool you have.</li>
+    <li><strong>Nothing keeps six contracts, one README and a dozen module docblocks in agreement.</strong> The prose is the specification and there is no test that reads it. The drift catalogued above is the ordinary cost of that, and it will grow.</li>
+  </ul>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <h2>What to take from this, and what not to</h2>
+
+    <p><strong>Measure before you architect, and write the measurement down.</strong> The strongest decisions here are not the clever ones; they are the ones with a number attached. "Seven processes with nothing written for two to three days" produced the 90-minute parked window. "226 ms per poll versus ~0 ms on a hit" produced a 6 s cache TTL. "The same model invented behaviour when asked for HTML and told the truth when asked for JSON" produced an entire tier's architecture. Each of those comments will still be legible to someone changing the value in two years, which is the only test a rationale comment has to pass.</p>
+
+    <p><strong>Put an unfalsifiable failure mode behind a hard refusal.</strong> Forge falls back for onboarding documents and refuses outright for rationale documents, because a wrong command announces itself and a wrong motive does not. Generalised: when the degraded output of a feature is indistinguishable from the good output, "unavailable" is a better state than "degraded", and it should be enforced at the API rather than left to the UI.</p>
+
+    <p><strong>Keep a dangerous capability out of the module that claims not to have it.</strong> <span class="path">lib/agents.js</span> can be shown to be observe-only by reading one file, because the single <code>process.kill</code> lives in the HTTP handler instead. A property that can be checked locally is worth more than the same property distributed across a boundary.</p>
+
+    <p><strong>What not to copy.</strong> The zero-dependency rule bought real things here — offline operation, a two-line install, a small audit surface — and it is affordable because the domain is small and the security posture is "treat every file as hostile", which a from-scratch renderer expresses more directly than a configured one. In a codebase with a wider surface, hand-writing a markdown parser is a liability, not a virtue. Likewise the append-only contract discipline: it exists to let authors who cannot talk to each other work in parallel, and it produced two files that can no longer be reorganised. If your authors can talk to each other, you are paying that price for nothing. And the ~7 GB of free disk that settled Electron versus Swift is a fact about one laptop, not an argument.</p>
+
+    <p class="colophon">Design rationale for ground-control · 64 files, 2.9 MB, no git history · sources: CONTRACT.md, CONTRACT-FORGE.md, CONTRACT-LOCAL.md, CONTRACT-APP.md, CONTRACT-RECLAIM.md, CONTRACT-WORKBENCH.md, README.md, and files under lib/, app/, public/, test/ read directly. Every rationale above is quoted from the repository, marked as inference, or reported as unknown.</p>
+  </div>
+</footer>
+
+</body>
+</html>
