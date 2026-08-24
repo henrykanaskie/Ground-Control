@@ -1,7 +1,15 @@
-# Ground Control — Build Contract
+# Ground Control: Build Contract
 
-A local, zero-dependency dashboard over a folder of projects.
-Root scanned by default: `~/coding_projects`
+A local, zero-dependency dashboard over the folders of projects you point it at.
+First run, with nothing configured, starts on `~/coding_projects`.
+
+> **Superseded in part by `CONTRACT-SOURCES.md`.** Ground Control watches a *list*
+> of folders now, not one root. Everything below still describes the shape of the
+> API and the UI; wherever it says "the scanned root", read "the folder this
+> project was scanned from". The additions are `sourceId` / `sourceKind` /
+> `sourcePath` / `sourceLabel` on `ProjectSummary`, a `sources` array on
+> `GET /api/projects`, and the `/api/sources`, `/api/browse` and
+> `/api/pick-folder` routes.
 
 **Hard rules for every agent**
 - Node.js stdlib ONLY. No npm installs, no `package.json` dependencies, no CDN
@@ -23,7 +31,7 @@ Root scanned by default: `~/coding_projects`
 | Agent B (frontend) | `public/index.html`, `public/css/app.css`, `public/js/app.js` |
 | Agent C (markdown) | `public/js/markdown.js`, `public/css/doc.css` |
 
-Integration (package.json, bin/ground-control, README) is handled by the lead — do not create those.
+Integration (package.json, bin/ground-control, README) is handled by the lead, do not create those.
 
 ---
 
@@ -39,7 +47,8 @@ with correct MIME types. Path traversal outside `public/` must be rejected.
 ### `GET /api/projects`
 ```jsonc
 {
-  "root": "/Users/you/coding_projects",
+  "root": "/Users/you/coding_projects",   // the first root-kind source
+  "sources": [ /* SourceInfo, see CONTRACT-SOURCES.md §3 */ ],
   "scannedAt": "2026-08-19T15:00:00.000Z",
   "durationMs": 412,
   "projects": [ /* ProjectSummary, sorted by lastActivityISO desc, nulls last */ ]
@@ -80,7 +89,12 @@ with correct MIME types. Path traversal outside `public/` must be rejected.
   "blurb": "A personal tool that stores a structured record of...",  // <= 240 chars, plain text, no markdown syntax
   "todoCount": 12,
   "hasTests": true,
-  "readmeBadgeCount": 0
+  "readmeBadgeCount": 0,
+  // Which watched folder this came from (CONTRACT-SOURCES.md §2)
+  "sourceId": "coding-projects",
+  "sourceKind": "root",            // root | project
+  "sourcePath": "/Users/you/coding_projects",
+  "sourceLabel": "coding_projects"
 }
 ```
 
@@ -98,11 +112,11 @@ with correct MIME types. Path traversal outside `public/` must be rejected.
 ```
 
 **Status rules** (`lastActivityISO` age):
-- `empty` — directory has no files at all (or only dotfiles)
-- `active` — activity within 7 days
-- `recent` — 7–30 days
-- `idle` — 30–120 days
-- `dormant` — older than 120 days
+- `empty`: directory has no files at all (or only dotfiles)
+- `active`: activity within 7 days
+- `recent`: 7–30 days
+- `idle`: 30–120 days
+- `dormant`: older than 120 days
 
 **Doc discovery & `kind`** (case-insensitive filename match, search project root + `docs/` + `doc/` + `.github/`, max depth 2, skipping `node_modules .git dist build .venv *venv __pycache__ .next target Pods .pytest_cache`):
 - `ONBOARDING*.md`, `GETTING_STARTED*.md`, `ONBOARD*.md` → `onboarding`
@@ -116,7 +130,7 @@ with correct MIME types. Path traversal outside `public/` must be rejected.
 **`featuredDoc` precedence:** `onboarding` > `claude` > `readme` > largest `design` > largest `doc`.
 Prefer richer docs: if two candidates tie on kind, pick the larger `wordCount`.
 
-**`blurb`:** from `featuredDoc` — first paragraph that is not a heading, badge,
+**`blurb`:** from `featuredDoc`: first paragraph that is not a heading, badge,
 blockquote, HTML comment, or code fence. Strip markdown syntax (links → their
 text, `**bold**` → bold, backticks removed). Collapse whitespace. Truncate on a
 word boundary at 240 chars with `…`.
@@ -144,30 +158,34 @@ word boundary at 240 chars with `…`.
 - Files over 2 MB → 413 `{ "error": "file too large" }`.
 
 ### `GET /api/raw?id=<projectId>&path=<relPath>`
-Serves raw file bytes with a correct MIME type — used to load a project's HTML
+Serves raw file bytes with a correct MIME type, used to load a project's HTML
 artifact into an iframe and to resolve images referenced by markdown. Same path
 guards as `/api/doc`. Set `X-Content-Type-Options: nosniff`.
 
-### `GET /api/stream` — Server-Sent Events
+### `GET /api/stream`: Server-Sent Events
 - On connect, immediately send `event: hello` / `data: {"ok":true}`.
-- Watch the root directory (`fs.watch`, non-recursive on root + one level down is
-  enough) and each project's `.git/HEAD` + `.git/refs`. On any change, debounce
+- Watch every watched folder (`fs.watch`, non-recursive on the folder + one level
+  down is enough) and each project's `.git/HEAD` + `.git/refs`. On any change, debounce
   **800 ms**, re-scan, then emit:
   `event: projects` / `data: <the full GET /api/projects payload>`
 - Send `event: ping` / `data: {}` every 25 s so proxies/browsers hold the connection.
 - Clean up watchers on client disconnect. Never let a watcher error crash the server.
 
 ### Server behavior
-- `node server.js [--root <dir>] [--port <n>] [--open]`
-  Defaults: root `~/coding_projects`, port `7377`.
+- `node server.js [--root <dir>] [--port <n>] [--config <file>] [--open]`
+  Defaults: port `7377`; sources from `~/.ground-control/sources.json`, seeded
+  with `~/coding_projects` on a first run. `--root` names the folder shown first
+  and, on a run where the config already exists, applies to that run only.
+  `--config` (or `GROUND_CONTROL_CONFIG`) points the source list elsewhere,
+  the test suite uses it so no test can read the developer's own list.
   `--open` launches the default browser (macOS `open`).
 - Cache the scan in memory; serve `/api/projects` from cache when it is < 5 s old.
   `?fresh=1` forces a rescan.
-- One slow/broken project must never fail the whole scan — wrap per-project work
+- One slow/broken project must never fail the whole scan: wrap per-project work
   in try/catch and return that project with whatever data succeeded.
-- Git work uses `child_process.execFile` with an explicit timeout (5 s) — never
+- Git work uses `child_process.execFile` with an explicit timeout (5 s), never
   `exec` with an interpolated shell string.
-- Log a single startup line: `Ground Control watching <root> → http://localhost:<port>`
+- Log a single startup line: `Ground Control watching <where> → http://localhost:<port>`
 
 ---
 
@@ -213,7 +231,7 @@ export function plainText(markdown, maxChars) -> string
   pass through untouched; external links get `target="_blank" rel="noreferrer"`.
 - Headings get stable slug `id`s (lowercase, non-alphanumerics → `-`, deduped
   with `-2`, `-3`). `headings()` must return the identical ids.
-- **HTML in the source must be escaped, not passed through** — this renders
+- **HTML in the source must be escaped, not passed through**, this renders
   files from disk, so treat all input as untrusted. Escape `< > &` in text; never
   emit a raw `<script>`, `<iframe>`, `on*=` attribute, or `javascript:` URL.
 
@@ -229,11 +247,11 @@ import { render, headings } from './markdown.js';
 docEl.innerHTML = render(res.content, { rawBase, docBase, basePath });
 ```
 
-`doc.css` (Agent C) styles only elements **inside** `.ground-control-doc` — headings,
+`doc.css` (Agent C) styles only elements **inside** `.ground-control-doc`: headings,
 paragraphs, lists, tables, `pre/code`, blockquotes, images, hr, task lists,
 plus a `.ground-control-doc-toc` list. Include lightweight token colors for fenced code
 (keywords/strings/comments/numbers) applied via classes Agent C's renderer emits.
-Long code blocks and wide tables scroll inside their own container — the page
+Long code blocks and wide tables scroll inside their own container, the page
 must never scroll horizontally.
 
 ---
@@ -241,23 +259,24 @@ must never scroll horizontally.
 ## 5. Frontend UX (Agent B)
 
 Single page, no router library; state in the URL hash.
-- `#/` — the grid of all projects.
-- `#/p/<id>` — project detail.
-- `#/p/<id>/doc/<encoded rel path>` — a document open in the reader.
+- `#/`: the grid of all projects.
+- `#/p/<id>`: project detail.
+- `#/p/<id>/doc/<encoded rel path>`: a document open in the reader.
 Back/forward and a hard refresh on any of those must restore the same view.
 
-**Header:** the name "GROUND_CONTROL", the scanned root path, project + status counts,
+**Header:** the name "GROUND_CONTROL", the watched-folder control (CONTRACT-SOURCES.md §5),
+project + status counts,
 a live-connection dot (green when SSE is open, dim when reconnecting), and a
 "rescan" button hitting `/api/projects?fresh=1`.
 
-**Controls:** text filter (matches name, stack, blurb — debounced 120 ms),
-status filter chips, stack filter, and a sort select
-(last activity / name / size / commits). Filter state lives in the URL query so
-it survives reload.
+**Controls:** text filter (matches name, stack, blurb, debounced 120 ms),
+status filter chips, stack filter, a folder filter once more than one folder is
+watched, and a sort select (last activity / name / size / commits). Filter state
+lives in the URL query so it survives reload.
 
 **Grid:** responsive card grid, `minmax(300px, 1fr)`. Each card shows the project
 name, a status dot + `statusReason`, relative last activity, stack chips,
-the blurb, a doc-count/TODO/dirty indicator row, and — when `featuredDoc` exists —
+the blurb, a doc-count/TODO/dirty indicator row, and (when `featuredDoc` exists)
 a prominent "Onboarding" affordance. Empty projects render visibly muted.
 Cards are keyboard reachable (`tabindex`, Enter opens) and are real links.
 

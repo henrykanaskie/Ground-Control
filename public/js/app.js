@@ -1,11 +1,11 @@
 /* ============================================================================
- * Ground Control — frontend
+ * Ground Control: frontend
  *
  * Vanilla ES module. No framework, no build step, no network beyond this origin.
  *
  * Security note: every value that comes from the API is written with
  * `textContent` / `setAttribute`, never `innerHTML`. The single exception is the
- * markdown reader, which assigns the output of markdown.js `render()` — the
+ * markdown reader, which assigns the output of markdown.js `render()`: the
  * contract guarantees that string is escape-safe.
  * ========================================================================= */
 
@@ -40,12 +40,12 @@ const $ = (sel) => document.querySelector(sel);
 const nf = new Intl.NumberFormat('en-US');
 
 function fmtNum(n) {
-  if (typeof n !== 'number' || !isFinite(n)) return '—';
+  if (typeof n !== 'number' || !isFinite(n)) return '-';
   return nf.format(n);
 }
 
 function fmtBytes(n) {
-  if (typeof n !== 'number' || !isFinite(n) || n < 0) return '—';
+  if (typeof n !== 'number' || !isFinite(n) || n < 0) return '-';
   if (n < 1024) return n + ' B';
   const units = ['KB', 'MB', 'GB', 'TB'];
   let v = n / 1024, i = 0;
@@ -59,7 +59,7 @@ const DIVS = [
 ];
 
 /**
- * Word counts used to render as `1522w`, which reads as "1522 weeks" — the
+ * Word counts used to render as `1522w`, which reads as "1522 weeks": the
  * unit has to be unambiguous even at 10.5px. Large counts are abbreviated so
  * the label still fits the card's meta row.
  */
@@ -138,7 +138,7 @@ const state = {
   byId: new Map(),             // id -> ProjectSummary
   order: [],                   // ids in server order
   cards: new Map(),            // id -> <article.card>
-  filters: { q: '', status: new Set(), stack: '', sort: 'activity', agent: false },  // Workbench §5
+  filters: { q: '', status: new Set(), stack: '', sort: 'activity', agent: false, source: '' },  // Workbench §5, Sources §5
   route: { view: 'grid', id: null, path: null },
   routeKey: '',
   loaded: false,
@@ -166,6 +166,7 @@ function readFilters() {
     stack: p.get('stack') || '',
     sort: ['activity', 'name', 'size', 'commits', 'agent'].includes(sort) ? sort : 'activity',
     agent: p.get('agent') === '1',                      // Workbench §5
+    source: p.get('source') || '',                      // Sources §5
   };
 }
 
@@ -177,6 +178,7 @@ function filterQueryString() {
   if (f.stack) p.set('stack', f.stack);
   if (f.sort !== 'activity') p.set('sort', f.sort);
   if (f.agent) p.set('agent', '1');                     // Workbench §5
+  if (f.source) p.set('source', f.source);              // Sources §5
   const s = p.toString();
   return s ? '?' + s : '';
 }
@@ -321,8 +323,10 @@ function applyData(payload, { live }) {
   el.skeletons.hidden = true;
   clear(el.skeletons);
 
+  srcApplyPayload(payload);                             // Sources §5
   renderHeader();
   renderStackOptions();
+  srcRenderOptions();                                   // Sources §5
   syncCards({ pulse: live ? new Set(changed) : new Set(), enter: new Set(added), removed });
   renderGrid();
 
@@ -348,15 +352,15 @@ function applyData(payload, { live }) {
 function renderHeader() {
   const pay = state.payload;
   if (!pay) return;
-  el.rootPath.textContent = pay.root || '';
-  el.rootPath.title = pay.root || '';
+  srcRenderHeader();                                    // Sources §5
 
   const counts = countByStatus();
   clear(el.counts);
   const total = h('span', null);
   total.append(h('b', null, fmtNum(state.order.length)), document.createTextNode(' projects'));
   el.counts.append(total);
-  el.counts.append(h('span', 'count-sep'));
+  // The separator only earns its place when a status chip follows it.
+  if (STATUSES.some((s) => counts[s])) el.counts.append(h('span', 'count-sep'));
   for (const s of STATUSES) {
     if (!counts[s]) continue;
     const chip = h('span', 'count-chip');
@@ -369,7 +373,7 @@ function renderHeader() {
 
   if (pay.scannedAt) {
     const dur = typeof pay.durationMs === 'number' ? ' in ' + fmtNum(Math.round(pay.durationMs)) + ' ms' : '';
-    el.footScan.textContent = 'scanned ' + relTime(pay.scannedAt) + dur + ' · ' + (pay.root || '');
+    el.footScan.textContent = 'scanned ' + relTime(pay.scannedAt) + dur + ' · ' + srcFootLabel();
   }
 }
 
@@ -447,6 +451,7 @@ function renderStackOptions() {
 function syncControlsFromState() {
   el.fQ.value = state.filters.q;
   el.fStack.value = state.filters.stack;
+  if (el.fSource) el.fSource.value = state.filters.source;      // Sources §5
   el.fSort.value = state.filters.sort;
   for (const b of el.fStatus.children) {
     b.setAttribute('aria-pressed', String(state.filters.status.has(b.dataset.status)));
@@ -455,7 +460,7 @@ function syncControlsFromState() {
 
 function filtersActive() {
   const f = state.filters;
-  return !!(f.q || f.status.size || f.stack || f.sort !== 'activity' || f.agent);  // Workbench §5
+  return !!(f.q || f.status.size || f.stack || f.sort !== 'activity' || f.agent || f.source);  // Workbench §5, Sources §5
 }
 
 /* ── filtering + sorting ──────────────────────────────────────────────── */
@@ -466,6 +471,7 @@ function matches(p, needle) {
     p.name, p.id, p.primaryLanguage, p.blurb,
     Array.isArray(p.stack) ? p.stack.join(' ') : '',
     p.statusReason,
+    p.sourceLabel || '',                                // Sources §5
   ].join(' ').toLowerCase();
   return needle.split(/\s+/).filter(Boolean).every((t) => hay.includes(t));
 }
@@ -500,6 +506,7 @@ function visibleProjects() {
     if (f.status.size && !f.status.has(p.status)) continue;
     if (f.stack && !(Array.isArray(p.stack) && p.stack.includes(f.stack))) continue;
     if (f.agent && !(p.agent && p.agent.live > 0)) continue;    // Workbench §5
+    if (f.source && p.sourceId !== f.source) continue;          // Sources §5
     if (!matches(p, needle)) continue;
     list.push(p);
   }
@@ -508,7 +515,7 @@ function visibleProjects() {
 }
 
 /* ============================================================================
- * Cards — created once per project, patched in place forever after
+ * Cards: created once per project, patched in place forever after
  * ========================================================================= */
 
 function syncCards({ pulse, enter, removed }) {
@@ -534,7 +541,7 @@ function syncCards({ pulse, enter, removed }) {
     } else if (card._sig !== signature(p)) {
       fillCard(card, p);
     } else if (p.agent && p.agent.state === 'working') {
-      // Only the agent's currentAction can have moved — patch the text rather
+      // Only the agent's currentAction can have moved: patch the text rather
       // than rebuilding the card and restarting the orbit cluster's animations.
       const what = card.querySelector('.wb-what');
       if (what) {
@@ -555,7 +562,7 @@ function syncCards({ pulse, enter, removed }) {
 
 /**
  * "Forge is building a document for this project right now." A hammer that
- * actually swings — the motion is the signal, and it stops the moment the job
+ * actually swings: the motion is the signal, and it stops the moment the job
  * reaches a terminal state (the grid re-emits on Forge lifecycle events).
  */
 const FORGE_BADGE = {
@@ -570,7 +577,7 @@ function forgeBadge(f) {
   const b = h('span', 'forge-badge is-' + kind);
   b.append(icon(spec.icon));
   b.append(h('span', 'forge-badge-t', spec.verb));
-  b.title = f.phase ? spec.label + ' — ' + f.phase : spec.label;
+  b.title = f.phase ? spec.label + ' - ' + f.phase : spec.label;
   b.setAttribute('aria-label', spec.label);
   return b;
 }
@@ -583,12 +590,14 @@ function signature(p) {
     (p.stack || []).join(','), (p.docs || []).length,
     p.featuredDoc ? p.featuredDoc.path : '',
     g.commitCount, g.dirty, g.dirtyCount, g.branch,
-    // Workbench §5 — an agent starting or stopping must repaint the card.
+    // Workbench §5: an agent starting or stopping must repaint the card.
     // currentAction is deliberately absent: it changes on every transcript write
     // and is patched in place by syncCards, not worth a full rebuild.
     p.agent ? p.agent.state + ':' + p.agent.live + ':' + p.agent.active : '',
     // A Forge build starting or finishing must repaint the card.
     p.forge && p.forge.running ? 'forge:' + p.forge.jobId + ':' + p.forge.kind : '',
+    // Sources §5: the provenance chip appears, disappears and renames.
+    (p.sourceId || '') + ':' + (srcMulti() ? (p.sourceLabel || '') : ''),
   ].join('\u0001');
 }
 
@@ -599,6 +608,8 @@ function fillCard(card, p) {
   card._sig = signature(p);
   card.classList.toggle('is-empty', p.status === 'empty');
   clear(card);
+
+  srcCardChip(card, p);                                 // Sources §5
 
   /* head: name + relative activity */
   const head = h('div', 'card-head');
@@ -629,10 +640,10 @@ function fillCard(card, p) {
   } else {
     blurb.classList.add('is-quiet');
     blurb.textContent = p.status === 'empty'
-      ? 'Nothing here yet — an empty placeholder directory.'
+      ? 'Nothing here yet: an empty placeholder directory.'
       : (p.docs && p.docs.length)
         ? 'No description found in this project’s documents.'
-        : 'No documents found — files only.';
+        : 'No documents found: files only.';
   }
   card.append(blurb);
 
@@ -681,7 +692,7 @@ function fillCard(card, p) {
       w.title = fmtNum(feat.wordCount) + ' words';
       a.append(w);
     }
-    a.setAttribute('aria-label', 'Open ' + k.label + ': ' + (feat.title || feat.path) + ' — ' + (p.name || p.id));
+    a.setAttribute('aria-label', 'Open ' + k.label + ': ' + (feat.title || feat.path) + ' - ' + (p.name || p.id));
     card.append(a);
   } else {
     card.append(h('div', 'card-nodoc', p.status === 'empty' ? 'empty directory' : 'no documents'));
@@ -746,15 +757,27 @@ function renderGrid() {
     el.gridEmptyClear.hidden = !filtersActive();
     el.gridEmptyText.textContent = filtersActive()
       ? 'No project matches the current filters. Try widening the search.'
-      : 'No projects were found in the scanned root.';
+      : srcCount() > 1
+        ? 'No projects were found in any of the watched folders.'
+        : 'No projects were found in the watched folder.';
   }
 
   if (total === 0 && state.payload) {
     el.gridEmpty.hidden = false;
     el.grid.hidden = true;
     el.gridEmptyClear.hidden = true;
-    el.gridEmptyText.textContent = 'The scanned root has no project directories in it.';
+    el.gridEmptyText.textContent = srcCount() === 0
+      ? 'Ground Control is not watching any folder yet.'
+      : srcCount() === 1
+        ? 'The folder Ground Control is watching has no project directories in it.'
+        : 'None of the watched folders has a project directory in it.';
   }
+
+  /* Sources §5: with nothing watched at all, the fix is to add a folder, not
+   * to widen a filter. That panel replaces both the grid and its empty state. */
+  const nothingWatched = Boolean(state.payload) && srcCount() === 0;
+  el.srcBlank.hidden = !nothingWatched;
+  if (nothingWatched) { el.gridEmpty.hidden = true; el.grid.hidden = true; }
 
   el.fClear.hidden = !filtersActive();
 
@@ -875,13 +898,13 @@ function crumbs(project, docTitle) {
  * "Move to Trash" for ANY project, not only ones the Reclaim sweep flagged.
  *
  * It goes through the same endpoint, the same typed-name confirmation and the
- * same guards as the Reclaim flow — the only difference is the way in. A
+ * same guards as the Reclaim flow: the only difference is the way in. A
  * folder Ground Control judged worth keeping now refuses once, explains why, and lets
  * the owner override; a folder that is structurally protected (Ground Control itself,
- * a path outside the root) still cannot be removed at all.
+ * a path outside every watched folder) still cannot be removed at all.
  */
 function trashAction(d) {
-  const wrap = h('div', 'dtrash');
+  const wrap = document.createDocumentFragment();
   const b = h('button', 'btn dtrash-b', null);
   b.type = 'button';
   b.append(icon('i-trash'), h('span', null, 'Move to Trash…'));
@@ -955,7 +978,10 @@ function paintDetail(box, d) {
   head.append(row);
   head.append(wbOpenRow(d));                            // Workbench §5
   head.append(h('div', 'dpath mono', d.path || ''));
-  head.append(trashAction(d));
+  const actions = h('div', 'dtrash');
+  actions.append(trashAction(d));
+  srcDetachAction(actions, d);                          // Sources §5
+  head.append(actions);
 
   if (d.blurb) head.append(h('p', 'dblurb', d.blurb));
 
@@ -963,8 +989,8 @@ function paintDetail(box, d) {
   stats.append(stat('Files', fmtNum(d.fileCount || 0)));
   stats.append(stat('Folders', fmtNum(d.dirCount || 0)));
   stats.append(stat('Size', fmtBytes(d.sizeBytes || 0)));
-  stats.append(stat('Commits', d.git ? fmtNum(d.git.commitCount || 0) : '—'));
-  stats.append(stat('Last 30d', d.git ? fmtNum(d.git.commitsLast30d || 0) : '—'));
+  stats.append(stat('Commits', d.git ? fmtNum(d.git.commitCount || 0) : '-'));
+  stats.append(stat('Last 30d', d.git ? fmtNum(d.git.commitsLast30d || 0) : '-'));
   stats.append(stat('Documents', fmtNum((d.docs || []).length)));
   stats.append(stat('TODOs', fmtNum(d.todoCount || 0)));
   head.append(stats);
@@ -1032,7 +1058,7 @@ function heatmapPanel(d) {
 
   if (!d.git) {
     body.remove();
-    p.append(h('div', 'panel-note', 'No git history — this project is not a repository.'));
+    p.append(h('div', 'panel-note', 'No git history: this project is not a repository.'));
     return p;
   }
   if (!acts.length) {
@@ -1292,7 +1318,7 @@ async function renderReader(id, path) {
       const b = h('div', 'blank');
       b.append(icon('i-alert', 'blank-icon'));
       b.append(h('h2', null, err.status === 404 ? 'Document not found' : 'Could not open this document'));
-      b.append(h('p', null, path + ' — ' + err.message));
+      b.append(h('p', null, path + ' - ' + err.message));
       const back = h('a', 'btn', 'Back to project');
       back.href = hrefProject(id);
       b.append(back);
@@ -1345,7 +1371,7 @@ async function paintReader(box, id, path, doc, token) {
   if (kind === 'html' || ctype === 'html') {
     const note = h('div', 'artifact-note');
     note.append(icon('i-window'));
-    const noteText = h('span', null, 'This is a project artifact, rendered in a sandboxed frame exactly as it sits on disk. Scripts are blocked here — ');
+    const noteText = h('span', null, 'This is a project artifact, rendered in a sandboxed frame exactly as it sits on disk. Scripts are blocked here: ');
     const open = h('a', null, 'open it in a new tab');
     open.href = rawUrl(id, path);
     open.target = '_blank';
@@ -1357,7 +1383,7 @@ async function paintReader(box, id, path, doc, token) {
     // allow-scripts is deliberately absent (CONTRACT-FORGE.md §9): this frame
     // renders arbitrary HTML out of the user's own repositories, and pairing
     // allow-scripts with allow-same-origin would let that page reach this
-    // origin. A page that needs JS therefore renders empty here — detected
+    // origin. A page that needs JS therefore renders empty here: detected
     // below, rather than left as a blank box.
     frame.setAttribute('sandbox', 'allow-same-origin');
     frame.setAttribute('title', (doc.title || path) + ' (project artifact)');
@@ -1371,7 +1397,7 @@ async function paintReader(box, id, path, doc, token) {
         const inner = frame.contentDocument;
         empty = !inner || !inner.body || !inner.body.textContent.trim();
       } catch {
-        empty = false;      // unreadable for some reason — don't guess it's broken
+        empty = false;      // unreadable for some reason: don't guess it's broken
       }
       if (!empty) return;
 
@@ -1381,7 +1407,7 @@ async function paintReader(box, id, path, doc, token) {
       b.append(icon('i-window', 'blank-icon'));
       b.append(h('h2', null, 'This page needs JavaScript to render'));
       b.append(h('p', null,
-        'It came out blank because Ground Control renders project HTML with scripts blocked — '
+        'It came out blank because Ground Control renders project HTML with scripts blocked: '
         + 'this frame shows files straight out of your repository, so running their code here '
         + 'would not be safe. Open it in a new tab to view it properly.'));
       const open2 = h('a', 'btn', 'Open in a new tab');
@@ -1413,7 +1439,7 @@ async function paintReader(box, id, path, doc, token) {
         // The ONE place innerHTML is used: markdown.js guarantees escaped-safe HTML.
         docEl.innerHTML = md.render(content, base);
       } catch (err) {
-        docEl.append(plainFallback(content, 'The markdown renderer failed (' + err.message + ') — showing the raw file.'));
+        docEl.append(plainFallback(content, 'The markdown renderer failed (' + err.message + '): showing the raw file.'));
       }
       docEl.addEventListener('click', onDocClick);
       try {
@@ -1421,7 +1447,7 @@ async function paintReader(box, id, path, doc, token) {
         buildToc(aside, hs, docEl);
       } catch { aside.remove(); }
     } else {
-      docEl.append(plainFallback(content, 'The markdown renderer is unavailable — showing the raw file.'));
+      docEl.append(plainFallback(content, 'The markdown renderer is unavailable: showing the raw file.'));
       aside.remove();
       layout.style.gridTemplateColumns = 'minmax(0,1fr)';
     }
@@ -1451,7 +1477,7 @@ function notebookView(content) {
   const frag = document.createDocumentFragment();
   const n = h('div', 'artifact-note');
   n.append(icon('i-notebook'));
-  n.append(h('span', null, 'Jupyter notebook — showing the raw document source.'));
+  n.append(h('span', null, 'Jupyter notebook: showing the raw document source.'));
   frag.append(n);
   let text = content;
   try { text = JSON.stringify(JSON.parse(content), null, 2); } catch { /* leave raw */ }
@@ -1539,22 +1565,22 @@ function prefersReducedMotion() {
 }
 
 /* ============================================================================
- * Forge — generate an onboarding artifact for a project
+ * Forge: generate an onboarding artifact for a project
  *
  * See CONTRACT-FORGE.md §6 (API) and §9 (this UI).
  *
  * Two rules shape everything below:
- *   §0b — generation runs on the user's Claude *subscription* via the
+ *   §0b: generation runs on the user's Claude *subscription* via the
  *         authenticated CLI. `costUsd` is a list-price equivalent, never money
  *         charged. It is only ever worded as usage.
- *   §2  — saving writes into the user's real project. It is a separate,
+ *   §2: saving writes into the user's real project. It is a separate,
  *         explicit, confirmed action, and a 409 needs a second confirmation.
  *
  * Job state lives in `forge.byProject`, outside the DOM, so navigating away
  * from a running job and back re-attaches instead of orphaning it.
  * ========================================================================= */
 
-/* Fallback only — /api/forge/status may ship its own `models` list, which wins. */
+/* Fallback only: /api/forge/status may ship its own `models` list, which wins. */
 const FORGE_MODELS = ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5'];
 
 const MODEL_NOTE = {
@@ -1568,12 +1594,12 @@ const MODEL_NOTE = {
 function forgeModels() {
   const fromServer = forge.status && Array.isArray(forge.status.models) ? forge.status.models : null;
   const list = (fromServer && fromServer.length ? fromServer : FORGE_MODELS).filter((m) => typeof m === 'string' && m);
-  return list.map((id) => ({ value: id, label: MODEL_NOTE[id] ? id + ' — ' + MODEL_NOTE[id] : id }));
+  return list.map((id) => ({ value: id, label: MODEL_NOTE[id] ? id + ' - ' + MODEL_NOTE[id] : id }));
 }
 
 const FORGE_BACKOFF = [1000, 2000, 5000, 15000];
 const FORGE_POLL_MS = 8000;
-// Fallbacks only — a job carries its own suggestedFilename.
+// Fallbacks only: a job carries its own suggestedFilename.
 const DEFAULT_ARTIFACT_NAME = 'ONBOARDING.html';
 const DESIGN_ARTIFACT_NAME = 'DESIGN.html';
 
@@ -1654,7 +1680,7 @@ const claudeReady = () => !!(forge.status && !forge.status.unavailable && forge.
 /* ── the local-model tier (CONTRACT-LOCAL.md §5) ──────────────────────── *
  * Runs a model on this machine through ollama. It works offline, never
  * touches the Claude subscription, and must never be shown with a money
- * figure — because there isn't one.
+ * figure, because there isn't one.
  * --------------------------------------------------------------------- */
 
 const ollamaInfo = () => (forge.status && !forge.status.unavailable && forge.status.ollama) || null;
@@ -1671,7 +1697,7 @@ function localModels() {
     const bits = [];
     if (m.parameterSize) bits.push(m.parameterSize);
     if (typeof m.sizeBytes === 'number' && m.sizeBytes > 0) bits.push(fmtBytes(m.sizeBytes));
-    return { value: m.name, label: bits.length ? m.name + ' — ' + bits.join(', ') : m.name };
+    return { value: m.name, label: bits.length ? m.name + ' - ' + bits.join(', ') : m.name };
   });
 }
 
@@ -1718,14 +1744,14 @@ function fmtClock(iso) {
 }
 
 /**
- * §0b — the CLI reports a list-price equivalent. On a Max subscription nothing
+ * §0b: the CLI reports a list-price equivalent. On a Max subscription nothing
  * is billed per run, so this is worded as usage and never as a charge.
  */
 function usageSentence(job) {
   const c = job && job.costUsd;
   if (typeof c !== 'number' || !isFinite(c) || c <= 0) return null;
   const amount = c < 0.01 ? '<$0.01' : '~$' + c.toFixed(2);
-  return amount + ' of list-price usage — counts toward your Claude subscription, not billed separately.';
+  return amount + ' of list-price usage: counts toward your Claude subscription, not billed separately.';
 }
 
 const previewUrl = (jobId) => '/api/forge/job/' + encodeURIComponent(jobId) + '/preview';
@@ -1816,7 +1842,7 @@ function scheduleForgeStream(st) {
   st.esTimer = setTimeout(() => { if (forgeLive(st)) openForgeStream(st); }, wait);
 }
 
-/** SSE payload shapes are loosely specified — accept anything reasonable. */
+/** SSE payload shapes are loosely specified: accept anything reasonable. */
 function onForgeProgress(st, raw) {
   let data = null;
   try { data = JSON.parse(raw); } catch { data = { text: String(raw == null ? '' : raw) }; }
@@ -1837,7 +1863,7 @@ function onForgeProgress(st, raw) {
 function pushForgeProgress(st, item) {
   st.progress.push(item);
   if (st.progress.length > 200) st.progress.splice(0, st.progress.length - 200);
-  // Work is visibly happening — don't keep claiming the job is queued until the
+  // Work is visibly happening: don't keep claiming the job is queued until the
   // next poll catches up.
   if (st.phase === 'starting' || st.phase === 'queued') {
     st.phase = 'running';
@@ -1869,7 +1895,7 @@ async function refreshForgeJob(st) {
       // Never leave a spinner with no terminal state.
       stopForgeTimers(st);
       st.phase = 'failed';
-      st.error = 'Ground Control no longer has a record of this job — the server may have restarted.';
+      st.error = 'Ground Control no longer has a record of this job: the server may have restarted.';
     } else if (!forgeLive(st)) {
       st.error = st.error || err.message;
     }
@@ -2005,7 +2031,7 @@ async function startForge(st, override) {
   if (res.status === 409) {
     const running = body.jobId || body.id || (body.job && body.job.id) || null;
     if (running) {
-      adoptForgeJob(st, running, 'A generation was already running for this project — re-attached to it.');
+      adoptForgeJob(st, running, 'A generation was already running for this project: re-attached to it.');
       return;
     }
   }
@@ -2044,7 +2070,7 @@ function discardForge(st) {
 }
 
 /* ============================================================================
- * Forge — rendering
+ * Forge: rendering
  * ========================================================================= */
 
 function forgePanel(d) {
@@ -2109,7 +2135,7 @@ function forgeNote(iconName, text, cls) {
 function forgeUnavailable(st) {
   const wrap = h('div', 'forge-off');
   wrap.append(h('p', 'forge-lede',
-    'This Ground Control server doesn’t offer artifact generation — nothing here can write to your projects.'));
+    'This Ground Control server doesn’t offer artifact generation: nothing here can write to your projects.'));
   wrap.append(h('p', 'forge-hint', 'GET /api/forge/status said: ' + (forge.status.unavailable || 'no response')));
   const btn = h('button', 'btn btn-sm', 'Check again');
   btn.type = 'button';
@@ -2127,11 +2153,11 @@ function paintForgeIdle(st, box) {
 
   box.append(h('p', 'forge-lede',
     'Build a single-file, self-contained HTML artifact for ' + (d.name || st.id) +
-    ', grounded in what this repository actually contains. It is written to Ground Control’s staging area first — nothing lands in your project until you explicitly save it.'));
+    ', grounded in what this repository actually contains. It is written to Ground Control’s staging area first: nothing lands in your project until you explicitly save it.'));
 
   if (st.saved) box.append(savedBanner(st));
 
-  // Status hasn't answered yet — don't guess at whether `claude` is available.
+  // Status hasn't answered yet: don't guess at whether `claude` is available.
   if (!forge.status) {
     const wait = h('div', 'forge-checking');
     wait.append(h('span', 'forge-spin'));
@@ -2154,23 +2180,23 @@ function paintForgeIdle(st, box) {
 
   const row = h('div', 'forge-controls');
 
-  /* kind — what the document is. Decided before the tier, which is only how
+  /* kind: what the document is. Decided before the tier, which is only how
    * it gets made. */
   const kindField = forgeField('Document', 'forge-kind-' + st.id);
   const kind = h('select', null);
   kind.id = 'forge-kind-' + st.id;
-  kind.append(new Option('Onboarding — how to work in this project', 'onboarding'));
-  const codeOpt = new Option('Code breakdown — the syntax, libraries and services', 'code');
-  const designOpt = new Option('Design rationale — why it is built this way', 'design');
+  kind.append(new Option('Onboarding: how to work in this project', 'onboarding'));
+  const codeOpt = new Option('Code breakdown: the syntax, libraries and services', 'code');
+  const designOpt = new Option('Design rationale: why it is built this way', 'design');
   // Only the authored tier reads the repository, and a rationale that isn't
   // checked against the code is just a plausible-sounding invention.
   designOpt.disabled = !ready;
-  if (!ready) designOpt.title = 'Needs the authored tier — the claude CLI isn’t available on this machine.';
+  if (!ready) designOpt.title = 'Needs the authored tier: the claude CLI isn’t available on this machine.';
   kind.append(designOpt);
   // Same authored-tier requirement as the rationale document: it has to be
   // checked against real source, so it needs a tier that can read the repo.
   codeOpt.disabled = !ready;
-  if (!ready) codeOpt.title = 'Needs the authored tier — the claude CLI isn’t available on this machine.';
+  if (!ready) codeOpt.title = 'Needs the authored tier: the claude CLI isn’t available on this machine.';
   kind.append(codeOpt);
   kind.value = st.controls.kind;
   kind.addEventListener('change', () => {
@@ -2180,23 +2206,23 @@ function paintForgeIdle(st, box) {
   kindField.append(kind);
   row.append(kindField);
 
-  /* tier — a design rationale is authored-only, so the other two are off for it */
+  /* tier: a design rationale is authored-only, so the other two are off for it */
   const designOnly = st.controls.kind !== 'onboarding';
   const designOnlyWhy = 'A design rationale has to be checked against the code, so only the authored tier can write one.';
   const tierField = forgeField('Tier', 'forge-tier-' + st.id);
   const tier = h('select', null);
   tier.id = 'forge-tier-' + st.id;
-  const authored = new Option('Authored — written by Claude', 'authored');
+  const authored = new Option('Authored: written by Claude', 'authored');
   authored.disabled = !ready;
   tier.append(authored);
-  // CONTRACT-LOCAL.md §5 — offered with its reason when it can't run, never
+  // CONTRACT-LOCAL.md §5: offered with its reason when it can't run, never
   // silently missing.
-  const localOpt = new Option('Local model — runs on this machine', 'local');
+  const localOpt = new Option('Local model: runs on this machine', 'local');
   localOpt.disabled = !localReady || designOnly;
   if (designOnly) localOpt.title = designOnlyWhy;
   else if (!localReady) localOpt.title = ollamaOffReason();
   tier.append(localOpt);
-  const templateOpt = new Option('Data-only — repository facts', 'template');
+  const templateOpt = new Option('Data-only: repository facts', 'template');
   templateOpt.disabled = designOnly;
   if (designOnly) templateOpt.title = designOnlyWhy;
   tier.append(templateOpt);
@@ -2208,7 +2234,7 @@ function paintForgeIdle(st, box) {
   tierField.append(tier);
   row.append(tierField);
 
-  /* model + audience — the local tier picks from what ollama has installed */
+  /* model + audience: the local tier picks from what ollama has installed */
   if (st.controls.tier === 'local') {
     const o = ollamaInfo() || {};
     const modelField = forgeField('Local model', 'forge-lmodel-' + st.id);
@@ -2234,7 +2260,7 @@ function paintForgeIdle(st, box) {
     row.append(audField);
   }
 
-  /* model — only meaningful for the authored tier */
+  /* model: only meaningful for the authored tier */
   if (st.controls.tier === 'authored') {
     const modelField = forgeField('Model', 'forge-model-' + st.id);
     const model = h('select', null);
@@ -2291,26 +2317,26 @@ function paintForgeIdle(st, box) {
 
   if (!localReady) {
     box.append(forgeNote('i-alert',
-      'The local-model tier is off — ' + ollamaOffReason(), 'is-quiet'));
+      'The local-model tier is off: ' + ollamaOffReason(), 'is-quiet'));
   }
 }
 
 /**
- * CONTRACT-LOCAL.md §5 — say plainly that it runs here and costs nothing.
+ * CONTRACT-LOCAL.md §5: say plainly that it runs here and costs nothing.
  * There is deliberately no money figure anywhere in this tier.
  */
 function localNote() {
   const fromServer = forge.status && typeof forge.status.localNote === 'string' && forge.status.localNote.trim();
   const o = ollamaInfo() || {};
   const note = forgeNote('i-check', fromServer ||
-    'The model runs on this machine through ollama. It works offline, needs no API key, and costs nothing — ' +
+    'The model runs on this machine through ollama. It works offline, needs no API key, and costs nothing: ' +
     'it doesn’t touch your Claude subscription.', 'is-quiet');
   if (o.version) note.title = 'ollama ' + o.version + (o.host ? ' at ' + o.host : '');
   return note;
 }
 
 /**
- * §0b — never present generation as metered. This is the standing explanation
+ * §0b: never present generation as metered. This is the standing explanation
  * shown before a run; the per-run figure is worded the same way afterwards.
  */
 function billingNote() {
@@ -2392,7 +2418,7 @@ function paintForgeMeta(st) {
   const meta = st.els.meta;
   clear(meta);
   if (st.streamDown) {
-    meta.append(forgeNote('i-alert', 'Lost the progress stream — reconnecting. The job keeps running on the server.'));
+    meta.append(forgeNote('i-alert', 'Lost the progress stream: reconnecting. The job keeps running on the server.'));
   }
   if (st.notice) meta.append(forgeNote('i-alert', st.notice));
 }
@@ -2420,7 +2446,7 @@ function paintForgeLog(st, opts = {}) {
 function forgeLogLine(item) {
   const row = h('div', 'forge-log-row');
   const t = fmtClock(item && item.atISO);
-  row.append(h('span', 'forge-log-t', t || '—'));
+  row.append(h('span', 'forge-log-t', t || '-'));
   row.append(h('span', 'forge-log-x', String((item && item.text) || '')));
   return row;
 }
@@ -2448,7 +2474,7 @@ function paintForgeDone(st, box) {
   if (usage) box.append(forgeNote('i-check', usage, 'is-quiet'));
 
   // The local tier reports what it drafted and what verification removed. No
-  // money figure — there isn't one (CONTRACT-LOCAL.md §5).
+  // money figure: there isn't one (CONTRACT-LOCAL.md §5).
   if (job.tier === 'local') {
     box.append(forgeNote('i-check',
       'Prose drafted by ' + (job.model || 'a local model') + ' on this machine. Every path, command and figure ' +
@@ -2460,7 +2486,7 @@ function paintForgeDone(st, box) {
   if (st.saved) box.append(savedBanner(st));
 
   box.append(h('p', 'forge-lede is-tight', st.saved
-    ? 'This preview is the staged copy. Saving again overwrites the file above — you will be asked to confirm.'
+    ? 'This preview is the staged copy. Saving again overwrites the file above: you will be asked to confirm.'
     : 'Nothing has been written into ' + ((st.project && st.project.name) || st.id) +
       ' yet. Read it here, then save it deliberately.'));
 
@@ -2493,7 +2519,7 @@ function paintForgeDone(st, box) {
 
   const discard = h('button', 'btn btn-ghost btn-sm', 'Discard');
   discard.type = 'button';
-  discard.title = 'Clears this preview. The staged file stays in Ground Control’s .forge/ area and is pruned by age — your project is untouched either way.';
+  discard.title = 'Clears this preview. The staged file stays in Ground Control’s .forge/ area and is pruned by age: your project is untouched either way.';
   discard.addEventListener('click', () => discardForge(st));
   actions.append(discard);
 
@@ -2558,7 +2584,7 @@ function paintForgeEnded(st, box) {
   if (wasAuthored && !isDesign) {
     const fallback = h('button', 'btn', 'Use data-only artifact');
     fallback.type = 'button';
-    fallback.title = 'Built from repository facts alone — no model, always available.';
+    fallback.title = 'Built from repository facts alone: no model, always available.';
     fallback.addEventListener('click', () => startForge(st, { tier: 'template' }));
     actions.append(fallback);
   }
@@ -2572,7 +2598,7 @@ function paintForgeEnded(st, box) {
 }
 
 /* ============================================================================
- * Forge — the save flow (CONTRACT-FORGE.md §2, §9)
+ * Forge: the save flow (CONTRACT-FORGE.md §2, §9)
  *
  * Saving is the one thing in Ground Control that writes into a real project, so it is
  * modal, shows the exact absolute destination, and a 409 "exists" demands a
@@ -2651,8 +2677,8 @@ function openSaveDialog(st) {
       filename = input.value;
       const bad = validFilename(filename);
       error = bad;
-      // Never show a destination the server would refuse — say why instead.
-      dest.textContent = bad ? '—' : destination();
+      // Never show a destination the server would refuse: say why instead.
+      dest.textContent = bad ? '-' : destination();
       dest.classList.toggle('is-void', !!bad);
       errNode.textContent = bad || '';
       confirm.disabled = !!bad;
@@ -2662,7 +2688,7 @@ function openSaveDialog(st) {
 
     form.append(h('div', 'fd-destl', 'Will be written to'));
     const initialBad = validFilename(filename);
-    const dest = h('div', 'fd-dest mono' + (initialBad ? ' is-void' : ''), initialBad ? '—' : destination());
+    const dest = h('div', 'fd-dest mono' + (initialBad ? ' is-void' : ''), initialBad ? '-' : destination());
     form.append(dest);
 
     const errNode = h('div', 'fd-err', error || '');
@@ -2762,7 +2788,7 @@ function openSaveDialog(st) {
   dlg.showModal();
 }
 
-/** After a successful write the project has a new doc — make the UI show it. */
+/** After a successful write the project has a new doc: make the UI show it. */
 function refreshAfterSave(st) {
   state.detailCache.delete(st.id);
   state.docCache.clear();
@@ -2848,7 +2874,7 @@ function onLocationChange() {
   const y = state.scroll.get(nextKey);
   const top = (prev.view && y != null) ? y : 0;
   window.scrollTo({ top, behavior: 'auto' });
-  // Async views paint after this tick — settle again once they have.
+  // Async views paint after this tick: settle again once they have.
   setTimeout(() => window.scrollTo({ top, behavior: 'auto' }), 0);
 }
 
@@ -2915,7 +2941,13 @@ function scheduleSSE() {
  * ========================================================================= */
 
 function cacheEls() {
-  el.rootPath = $('#root-path');
+  el.srcBtn = $('#src-btn');                            // Sources §5
+  el.srcBtnLabel = $('#src-btn-label');
+  el.srcBlank = $('#src-blank');
+  el.srcBlankAdd = $('#src-blank-add');
+  el.fSource = $('#f-source');
+  el.fSourceWrap = $('#f-source-wrap');
+  el.dropzone = $('#dropzone');
   el.counts = $('#hdr-counts');
   el.live = $('#live');
   el.liveLabel = $('#live-label');
@@ -2960,6 +2992,11 @@ function wireControls() {
     syncFilterUrl();
     renderGrid();
   });
+  el.fSource.addEventListener('change', () => {         // Sources §5
+    state.filters.source = el.fSource.value;
+    syncFilterUrl();
+    renderGrid();
+  });
   el.fSort.addEventListener('change', () => {
     state.filters.sort = el.fSort.value;
     syncFilterUrl();
@@ -2967,7 +3004,7 @@ function wireControls() {
   });
 
   const clearAll = () => {
-    state.filters = { q: '', status: new Set(), stack: '', sort: 'activity', agent: false };  // Workbench §5
+    state.filters = { q: '', status: new Set(), stack: '', sort: 'activity', agent: false, source: '' };  // Workbench §5, Sources §5
     syncControlsFromState();
     syncFilterUrl();
     renderGrid();
@@ -3049,7 +3086,7 @@ if (document.readyState === 'loading') {
 }
 
 /* ============================================================================
- * WORKBENCH — open, hop, and watch (CONTRACT-WORKBENCH.md §5)
+ * WORKBENCH: open, hop, and watch (CONTRACT-WORKBENCH.md §5)
  *
  * Appended below the original app and below Forge. Nothing above was
  * restructured; the existing render functions gained one call line each, marked
@@ -3057,10 +3094,10 @@ if (document.readyState === 'loading') {
  * chip and the "Agent activity" sort.
  *
  * Two rules shape everything here:
- *   §3 — Ground Control OBSERVES agents. There is no control in this UI that stops,
+ *   §3: Ground Control OBSERVES agents. There is no control in this UI that stops,
  *        signals, or otherwise touches a running agent, and nothing beyond the
  *        short status labels the API returns is ever shown.
- *   §5 — most cards must stay calm. A project with no agent renders nothing at
+ *   §5: most cards must stay calm. A project with no agent renders nothing at
  *        all; the pulse is an accent, and it disappears under
  *        `prefers-reduced-motion`.
  * ========================================================================= */
@@ -3095,7 +3132,7 @@ function wbLoadEditors() {
   return wb.editorsPromise;
 }
 
-/** Editors tailored to one project — Xcode only shows up when it can work. */
+/** Editors tailored to one project: Xcode only shows up when it can work. */
 function wbProjectEditors(id) {
   const hit = wb.byProject.get(id);
   if (hit && hit.then) return hit;
@@ -3143,7 +3180,7 @@ async function wbOpenProject(projectId, editorId, opts = {}) {
     announce('Opened ' + what + ' in ' + label + '.');
     return res;
   } catch (err) {
-    wbToast('Could not open in ' + label + ' — ' + err.message, 'bad');
+    wbToast('Could not open in ' + label + ' - ' + err.message, 'bad');
     announce('Could not open in ' + label + '. ' + err.message);
     return null;
   }
@@ -3313,15 +3350,15 @@ function wbToggleMenu(anchor, box, projectId, editors, opts) {
    A running agent is drawn as a body in orbit around the project. The count
    is readable from the figure itself (one satellite each, up to four; beyond
    that a numeral takes over), so the shape carries the information rather
-   than decorating it. Every moving part is CSS transform only — 19 cards
-   animate without touching layout — and all of it stops flat under
+   than decorating it. Every moving part is CSS transform only: 19 cards
+   animate without touching layout, and all of it stops flat under
    prefers-reduced-motion.                                                  */
 /** How many distinct orbits the figure draws before deferring to the count. */
 const WB_MAX_ORBITS = 6;
 
 function wbCore(live, variant) {
   // One figure for every agent state. `working` runs; `open` is the same
-  // machine powered but not turning; `off` is it shut down — the shape stays
+  // machine powered but not turning; `off` is it shut down: the shape stays
   // recognisable so the eye reads "agent here, not running" rather than
   // hunting for a different symbol.
   //
@@ -3354,7 +3391,7 @@ function wbCore(live, variant) {
   else for (let i = 0; i < n; i++) radii.push(5.5 + (i * (11 - 5.5)) / (n - 1));
 
   // With no agents there is nothing in orbit, but the figure still needs its
-  // outline — that is what makes `open` and `off` read as the same machine.
+  // outline: that is what makes `open` and `off` read as the same machine.
   if (n === 0) svg.appendChild(circle('wb-core-ring', 9));
   else for (const r of radii) svg.appendChild(circle('wb-orbit', r));
 
@@ -3386,7 +3423,7 @@ function wbLiveLabel(a) {
 }
 function wbLiveAria(a) {
   return (a.live === 1 ? '1 agent running' : a.live + ' agents running')
-    + (a.currentAction ? ' — ' + a.currentAction : '');
+    + (a.currentAction ? ' - ' + a.currentAction : '');
 }
 
 function wbDecorateCard(card, p) {
@@ -3400,7 +3437,7 @@ function wbDecorateCard(card, p) {
     const quiet = a.state !== 'working';
     const row = h('div', 'wb-live' + (quiet ? ' is-idle' : ''));
     // The figure appears ONLY for an agent that is working right now. A session
-    // that merely exists — process alive, nothing being written — gets a line
+    // that merely exists (process alive, nothing being written) gets a line
     // of text and no symbol: the orbit is a claim about activity, and drawing
     // it for an idle session is the claim being wrong.
     if (a.state === 'working') row.append(wbCore(a.active));
@@ -3427,7 +3464,7 @@ function wbDecorateCard(card, p) {
     } else {
       const when = a.lastSessionRelative || relTime(a.lastSessionISO);
       // `parked` processes are alive but have written nothing for long enough
-      // that calling them agents would be a lie. Name them anyway — otherwise
+      // that calling them agents would be a lie. Name them anyway: otherwise
       // "agent ran 17 hours ago" next to seven running processes just looks
       // wrong, and the reader has no way to find out why.
       const parked = a.parked > 0
@@ -3436,7 +3473,7 @@ function wbDecorateCard(card, p) {
       const x = h('span', 'wb-what', 'agent ran ' + when + parked);
       x.title = a.parked > 0
         ? a.parked + ' Claude Code process(es) are still running here, but nothing has been '
-          + 'written to their transcripts since ' + when + ' — most likely editor tabs left open.'
+          + 'written to their transcripts since ' + when + ': most likely editor tabs left open.'
         : 'Last Claude Code session ' + when;
       row.append(x);
     }
@@ -3471,7 +3508,7 @@ const WB_ORIGIN = { vscode: 'VS Code', desktop: 'desktop app', cli: 'terminal' }
 
 /**
  * Stop control: click once to arm, once more to send. Deliberately not a
- * one-click action and deliberately not a modal — stopping a session is
+ * one-click action and deliberately not a modal: stopping a session is
  * destructive enough to want a second beat, and cheap enough not to warrant a
  * dialog. Arming lapses after four seconds so a stray click cannot sit primed.
  */
@@ -3587,17 +3624,17 @@ function wbPaintAgents(p, body, d, data) {
   const sessions = Array.isArray(data.sessions) ? data.sessions : [];
   const procs = Array.isArray(data.processes) ? data.processes : [];
 
-  /* Nothing has ever run here — say so plainly, do not draw an empty box. */
+  /* Nothing has ever run here: say so plainly, do not draw an empty box. */
   if (!live && !sessions.length && !data.lastSessionISO) {
     body.append(h('div', 'panel-note', 'No coding agent has ever run in this project.'));
     return;
   }
 
-  /* What is happening right now: said once, not repeated per process — the
+  /* What is happening right now: said once, not repeated per process: the
    * current action comes from the newest session, not from a given PID. */
   if (live > 0) {
     const lead = h('div', 'wb-lead');
-    // Same figure as the card, scaled up — one representation of a running
+    // Same figure as the card, scaled up: one representation of a running
     // agent everywhere it appears, so the two views reinforce each other.
     lead.append(wbCore(data.active || live));
     const main = h('div', 'wb-lead-main');
@@ -3608,8 +3645,8 @@ function wbPaintAgents(p, body, d, data) {
     body.append(lead);
   }
 
-  /* The processes themselves. Ground Control now offers one action here — stopping a
-   * session — with the guards described in CONTRACT-WORKBENCH.md §3. */
+  /* The processes themselves. Ground Control now offers one action here: stopping a
+   * session: with the guards described in CONTRACT-WORKBENCH.md §3. */
   if (procs.length) {
     const row = h('div', 'wb-procs');
     for (const proc of procs) {
@@ -3640,7 +3677,7 @@ function wbPaintAgents(p, body, d, data) {
     body.append(row);
     if (procs.some((q) => q.parked)) {
       const n = h('div', 'wb-pnote',
-        'Sessions marked idle are still running but have written nothing recently — usually editor tabs left open. '
+        'Sessions marked idle are still running but have written nothing recently: usually editor tabs left open. '
         + 'They are not counted as active agents.');
       body.append(n);
     }
@@ -4001,7 +4038,7 @@ if (document.readyState === 'loading') {
 }
 
 /* ============================================================================
- * RECLAIM — flag and remove dead folders (CONTRACT-RECLAIM.md §6)
+ * RECLAIM: flag and remove dead folders (CONTRACT-RECLAIM.md §6)
  *
  * Appended below Workbench. Nothing above was restructured: this section adds
  * its own `hashchange` listener for `#/reclaim` rather than editing the router,
@@ -4012,11 +4049,11 @@ if (document.readyState === 'loading') {
  *
  *   · No card, anywhere, ever gets a delete control. The only way in is the
  *     quiet "Review" line under the grid.
- *   · A project with any blocker is not offered the action at all — it sits in
+ *   · A project with any blocker is not offered the action at all: it sits in
  *     a separate group that explains what is protecting it.
  *   · Removal is modal, names the absolute path, requires the folder name
  *     typed exactly, focuses Cancel, and its confirm button says "Move to
- *     Trash" — never "Delete", because nothing is deleted.
+ *     Trash": never "Delete", because nothing is deleted.
  *   · Nothing here is bound to a keyboard shortcut, and there is no
  *     multi-select and no "remove all".
  * ========================================================================= */
@@ -4030,7 +4067,7 @@ const rc = {
   error: null,
   open: false,         // is the reclaim view the current view?
   loadedAt: 0,
-  removed: [],         // { name, trashedTo } — what this session moved
+  removed: [],         // { name, trashedTo }: what this session moved
   dialog: null,
 };
 
@@ -4100,8 +4137,8 @@ function rcSyncSlot() {
   line.append(icon('i-hollow'));
   line.append(h('span', 'rc-slot-x',
     n === 1
-      ? '1 folder looks reclaimable — nothing of value in it, and nothing has happened there in a long time.'
-      : n + ' folders look reclaimable — nothing of value in them, and nothing has happened there in a long time.'));
+      ? '1 folder looks reclaimable: nothing of value in it, and nothing has happened there in a long time.'
+      : n + ' folders look reclaimable: nothing of value in them, and nothing has happened there in a long time.'));
   line.append(h('span', 'rc-slot-go', 'Review'));
   slot.append(line);
 }
@@ -4125,7 +4162,7 @@ function rcRender() {
   const title = h('div', 'rc-title');
   title.append(h('h1', 'rc-h1', 'Reclaim'));
   title.append(h('p', 'rc-sub',
-    'Folders that look finished with. Nothing here is ever deleted — anything you move goes to the macOS Trash, and you can drag it back out.'));
+    'Folders that look finished with. Nothing here is ever deleted: anything you move goes to the macOS Trash, and you can drag it back out.'));
   head.append(title);
 
   const tools = h('div', 'rc-tools');
@@ -4166,7 +4203,7 @@ function rcRender() {
     const blank = h('div', 'rc-blank');
     blank.append(icon('i-check', 'rc-blank-i'));
     blank.append(h('p', 'rc-blank-h', 'Nothing here is safe to remove.'));
-    blank.append(h('p', 'rc-blank-p', 'Every folder in the root either holds real content, has git work that exists nowhere else, or has been touched recently.'));
+    blank.append(h('p', 'rc-blank-p', 'Every folder Ground Control is watching either holds real content, has git work that exists nowhere else, or has been touched recently.'));
     box.append(blank);
   } else {
     const list = h('ul', 'rc-list');
@@ -4194,7 +4231,7 @@ function rcRender() {
 
   const foot = h('p', 'rc-foot',
     'Assessed ' + (rc.data.scannedAt ? relTime(rc.data.scannedAt) : 'just now')
-    + '. File counts ignore node_modules, virtualenvs, build output and caches — a folder full of dependencies still counts as empty.');
+    + '. File counts ignore node_modules, virtualenvs, build output and caches: a folder full of dependencies still counts as empty.');
   box.append(foot);
 }
 
@@ -4220,7 +4257,7 @@ function rcMovedBanner(done) {
   return box;
 }
 
-/* One row. `offerAction` is false for every blocked project — the button is
+/* One row. `offerAction` is false for every blocked project: the button is
  * not rendered disabled, it is not rendered at all. */
 function rcRow(a, offerAction) {
   const li = h('li', 'rc-row' + (a.blockers.length ? ' is-blocked' : ''));
@@ -4299,7 +4336,7 @@ function rcFact(value, title) {
 /** The git state as a sentence a person would say out loud. */
 function rcGitSentence(g) {
   if (!g) return 'Git state unknown.';
-  if (!g.hasGit) return 'Not a git repository — there is no history here to lose.';
+  if (!g.hasGit) return 'Not a git repository: there is no history here to lose.';
   if (!g.readable) return 'This folder has a .git directory that git would not describe.';
   if (g.commitCount === 0) return 'A git repository was initialised, but nothing was ever committed.';
 
@@ -4376,7 +4413,7 @@ function rcOpenDialog(a) {
       : (a.meaningfulFiles === 1 ? '1 real file' : a.meaningfulFiles + ' real files')
         + ' totalling ' + fmtBytes(a.meaningfulBytes) + '.'));
     if (a.onDiskFiles > a.meaningfulFiles) {
-      what.append(h('li', null, fmtNum(a.onDiskFiles) + ' files on disk in total — the rest are lockfiles, git config or empty files.'));
+      what.append(h('li', null, fmtNum(a.onDiskFiles) + ' files on disk in total: the rest are lockfiles, git config or empty files.'));
     }
     if (a.ignoredDirs && a.ignoredDirs.length) {
       what.append(h('li', null, 'Plus dependency and build folders that were not counted: ' + a.ignoredDirs.join(', ') + '. They go too.'));
@@ -4391,7 +4428,7 @@ function rcOpenDialog(a) {
 
     const safe = h('div', 'rc-d-safe');
     safe.append(icon('i-shield'));
-    safe.append(h('span', null, 'This moves the folder to the macOS Trash. Nothing is deleted — you can open the Trash and drag it back out.'));
+    safe.append(h('span', null, 'This moves the folder to the macOS Trash. Nothing is deleted: you can open the Trash and drag it back out.'));
     form.append(safe);
 
     /* the typed confirmation */
@@ -4471,7 +4508,7 @@ function rcOpenDialog(a) {
    * The folder is fine to remove structurally, but Ground Control judged the work
    * worth keeping. That judgement belongs to whoever owns the folder, so this
    * stage states the reasons plainly and requires the name typed a second
-   * time. It is not a checkbox — retyping is the friction.
+   * time. It is not a checkbox: retyping is the friction.
    */
   function paintOverride() {
     form.append(h('h2', 'rc-d-h', 'Override and move ' + a.projectName + ' to the Trash?'));
@@ -4482,7 +4519,7 @@ function rcOpenDialog(a) {
     x.append(h('div', 'rc-d-warn-h', 'This folder was not flagged for reclamation.'));
     x.append(h('div', 'rc-d-warn-p',
       'Ground Control found reasons to keep it, listed below. Overriding moves the folder to the '
-      + 'macOS Trash — it is not deleted, and you can drag it back out. Every reason you '
+      + 'macOS Trash: it is not deleted, and you can drag it back out. Every reason you '
       + 'override is recorded in the reclaim log.'));
     warn.append(x);
     form.append(warn);
@@ -4661,7 +4698,7 @@ function rcOpenDialog(a) {
   dlg.showModal();
 }
 
-/** A folder left the root — every other view has to agree. */
+/** A folder left the dashboard: every other view has to agree. */
 function rcAfterRemoval() {
   state.detailCache.clear();
   state.docCache.clear();
@@ -4674,7 +4711,7 @@ function rcAfterRemoval() {
 /**
  * `#/reclaim` is handled here rather than in `readRoute()`, so the original
  * router is left untouched. This listener runs after the app's own, which has
- * already shown the grid for an unrecognised hash — this hides it again.
+ * already shown the grid for an unrecognised hash: this hides it again.
  */
 function rcOnHash() {
   const want = location.hash.replace(/\?.*$/, '') === RC_HASH;
@@ -4689,7 +4726,7 @@ function rcOnHash() {
       /* Hand the page back to the real router.
        *
        * `#/reclaim` is an unrecognised hash as far as `readRoute()` is
-       * concerned, so it reads as the grid route — which means leaving reclaim
+       * concerned, so it reads as the grid route, which means leaving reclaim
        * for `#/` looks to `onLocationChange()` like the route did not change,
        * and it returns early without unhiding anything. Since this section was
        * the one that hid those views, it is this section's job to restore them,
@@ -4733,4 +4770,977 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', rcBoot, { once: true });
 } else {
   rcBoot();
+}
+
+/* ============================================================================
+ * SOURCES: watch any folder, anywhere (CONTRACT-SOURCES.md §5)
+ *
+ * Appended below Reclaim. Nothing above was restructured; the existing render
+ * functions gained one call line each, marked `Sources §5`, and the filter
+ * helpers gained one line each for the folder filter.
+ *
+ * Three rules shape everything here:
+ *   §0: removing a folder from the dashboard never touches the folder. The
+ *        wording says so every time, because "remove" reads as "delete" and
+ *        the two must never be confused. Deleting is Reclaim's job, behind a
+ *        typed-name confirmation.
+ *   §1: a folder is described before it is added. The dialog says what
+ *        Ground Control found and how it will read it, so nothing is a surprise.
+ *   §5: with one folder watched, this feature is nearly invisible: a quiet
+ *        label in the header where the root path used to be.
+ * ========================================================================= */
+
+const src = {
+  list: [],                 // SourceInfo[] straight from the server
+  meta: null,               // the last /api/sources payload
+  panel: null,              // the open header panel, or null
+  dialog: null,             // the open add-a-folder dialog, or null
+  dragDepth: 0,             // dragenter/dragleave pairs, which nest
+};
+
+const srcCount = () => src.list.length;
+const srcMulti = () => src.list.length > 1;
+const srcById = (id) => src.list.find((s) => s.id === id) || null;
+
+/* ── the payload keeps the list current ──────────────────────────────── */
+
+/**
+ * Every `/api/projects` response carries the source list, so the header stays
+ * right without a second request: including when another window adds a folder
+ * and this one hears about it over SSE.
+ */
+function srcApplyPayload(payload) {
+  if (!payload || !Array.isArray(payload.sources)) return;
+  const before = src.list.map((s) => s.id + ':' + s.path + ':' + s.kind + ':' + s.exists).join('|');
+  src.list = payload.sources;
+  const after = src.list.map((s) => s.id + ':' + s.path + ':' + s.kind + ':' + s.exists).join('|');
+  // A folder added or removed in another window arrives over SSE; an open
+  // panel must not keep showing the list as it was.
+  if (before !== after && src.panel) src.panel.repaint();
+}
+
+async function srcLoad() {
+  try {
+    const data = await getJSON('/api/sources');
+    src.meta = data;
+    src.list = Array.isArray(data.sources) ? data.sources : [];
+    srcRenderHeader();
+    srcRenderOptions();
+    return data;
+  } catch {
+    return null;                          // the header simply keeps what it had
+  }
+}
+
+/* ── header ──────────────────────────────────────────────────────────── */
+
+function srcShortPath(p) {
+  if (!p) return '';
+  const home = (src.meta && src.meta.homeDir) || '';
+  return home && p.startsWith(home + '/') ? '~' + p.slice(home.length) : p;
+}
+
+function srcRenderHeader() {
+  if (!el.srcBtn) return;
+  const list = src.list;
+  const label = el.srcBtnLabel;
+
+  if (!list.length) {
+    label.textContent = 'no folders';
+    el.srcBtn.title = 'Ground Control is not watching any folder yet: click to add one';
+  } else {
+    const primary = list.find((s) => s.primary) || list[0];
+    label.textContent = srcShortPath(primary.path);
+    el.srcBtn.title = list.length === 1
+      ? 'Watching ' + primary.path
+      : 'Watching ' + list.length + ' folders: click to manage them';
+  }
+
+  // The count badge only exists when there is more than one folder to count.
+  const old = el.srcBtn.querySelector('.src-btn-n');
+  if (old) old.remove();
+  if (list.length > 1) {
+    const n = h('span', 'src-btn-n', '+' + (list.length - 1));
+    el.srcBtn.insertBefore(n, el.srcBtn.querySelector('.src-btn-c'));
+  }
+
+  const missing = list.filter((s) => !s.exists).length;
+  el.srcBtn.classList.toggle('is-bad', missing > 0);
+}
+
+/** The footer's "scanned … · <where>" tail. */
+function srcFootLabel() {
+  const list = src.list;
+  if (!list.length) return 'no folders watched';
+  if (list.length === 1) return list[0].path;
+  const primary = list.find((s) => s.primary) || list[0];
+  return primary.path + ' +' + (list.length - 1) + ' more';
+}
+
+/* ── the folder filter ───────────────────────────────────────────────── */
+
+function srcRenderOptions() {
+  if (!el.fSource) return;
+  el.fSourceWrap.hidden = !srcMulti();
+
+  // Count what each folder actually contributes, so the option is informative.
+  const counts = new Map();
+  for (const id of state.order) {
+    const p = state.byId.get(id);
+    if (!p || !p.sourceId) continue;
+    counts.set(p.sourceId, (counts.get(p.sourceId) || 0) + 1);
+  }
+
+  const sig = src.list.map((s) => s.id + ':' + s.display + ':' + (counts.get(s.id) || 0)).join(' ');
+  if (el.fSource.dataset.sig !== sig) {
+    el.fSource.dataset.sig = sig;
+    clear(el.fSource);
+    el.fSource.append(new Option('All folders', ''));
+    for (const s of src.list) {
+      el.fSource.append(new Option(s.display + ' (' + (counts.get(s.id) || 0) + ')', s.id));
+    }
+  }
+
+  // A filter pointing at a folder that is no longer watched must not stick.
+  if (state.filters.source && !srcById(state.filters.source)) {
+    state.filters.source = '';
+    syncFilterUrl();
+  }
+  el.fSource.value = state.filters.source || '';
+}
+
+/* ── card provenance ─────────────────────────────────────────────────── */
+
+/**
+ * Which folder this project came from. Drawn only when more than one folder is
+ * watched: with a single source it would say the same thing on every card.
+ */
+function srcCardChip(card, p) {
+  if (!srcMulti() || !p.sourceId) return;
+  const s = srcById(p.sourceId);
+  const chip = h('div', 'card-src');
+  chip.append(icon(p.sourceKind === 'project' ? 'i-box' : 'i-folder'));
+  chip.append(h('span', null, s ? s.display : (p.sourceLabel || '')));
+  chip.title = p.sourceKind === 'project'
+    ? 'Added on its own from ' + (p.sourcePath || '')
+    : 'In ' + (p.sourcePath || '');
+  card.append(chip);
+}
+
+/* ── the header panel ────────────────────────────────────────────────── */
+
+function srcClosePanel() {
+  if (src.panel) { src.panel.close(); src.panel = null; }
+}
+
+function srcTogglePanel() {
+  if (src.panel) { srcClosePanel(); return; }
+
+  const panel = h('div', 'src-panel');
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-label', 'Folders Ground Control is watching');
+
+  const paint = () => {
+    clear(panel);
+
+    const head = h('div', 'src-panel-h');
+    head.append(h('span', null, 'Watching'));
+    head.append(h('span', 'src-panel-hn',
+      src.list.length === 1 ? '1 folder' : src.list.length + ' folders'));
+    panel.append(head);
+
+    if (src.meta && src.meta.configError) {
+      panel.append(h('div', 'src-panel-err', src.meta.configError));
+    }
+
+    if (!src.list.length) {
+      panel.append(h('div', 'src-panel-note',
+        'Nothing is being watched. Add a folder full of projects, or a single project from anywhere on disk.'));
+    }
+
+    for (const s of src.list) panel.append(srcPanelItem(s, paint));
+
+    const foot = h('div', 'src-panel-foot');
+    const add = h('button', 'btn btn-primary');
+    add.type = 'button';
+    add.append(icon('i-plus'), h('span', null, 'Add a folder'));
+    add.addEventListener('click', () => { srcClosePanel(); srcOpenDialog(); });
+    foot.append(add);
+    panel.append(foot);
+
+    panel.append(h('div', 'src-panel-note',
+      'Removing a folder takes it off this dashboard. Nothing on disk is moved, renamed or deleted.'));
+  };
+
+  paint();
+  document.body.append(panel);
+
+  const r = el.srcBtn.getBoundingClientRect();
+  const w = panel.offsetWidth || 430;
+  panel.style.top = Math.min(r.bottom + 8, window.innerHeight - 40) + 'px';
+  panel.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
+
+  el.srcBtn.setAttribute('aria-expanded', 'true');
+
+  const onDown = (ev) => {
+    if (panel.contains(ev.target) || el.srcBtn.contains(ev.target)) return;
+    srcClosePanel();
+  };
+  const onKey = (ev) => {
+    if (ev.key === 'Escape') { ev.stopPropagation(); srcClosePanel(); el.srcBtn.focus(); }
+  };
+  const onMove = () => srcClosePanel();
+
+  document.addEventListener('pointerdown', onDown, true);
+  document.addEventListener('keydown', onKey, true);
+  window.addEventListener('resize', onMove);
+  window.addEventListener('scroll', onMove, true);
+
+  src.panel = {
+    repaint: paint,
+    close() {
+      document.removeEventListener('pointerdown', onDown, true);
+      document.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('resize', onMove);
+      window.removeEventListener('scroll', onMove, true);
+      el.srcBtn.setAttribute('aria-expanded', 'false');
+      panel.remove();
+    },
+  };
+}
+
+function srcPanelItem(s, repaint) {
+  const row = h('div', 'src-item');
+  row.classList.toggle('is-root', s.kind === 'root');
+  row.classList.toggle('is-missing', !s.exists);
+
+  row.append(icon(!s.exists ? 'i-alert' : s.kind === 'project' ? 'i-box' : 'i-folder', 'icon src-item-i'));
+
+  const body = h('div', 'src-item-b');
+  const name = h('div', 'src-item-n');
+  name.append(h('span', null, s.display));
+  name.append(h('span', 'src-item-k', s.kind === 'project' ? 'project' : 'folder'));
+  body.append(name);
+
+  const p = h('div', 'src-item-p', srcShortPath(s.path));
+  p.title = s.path;
+  body.append(p);
+
+  const meta = h('div', 'src-item-m');
+  if (!s.exists) {
+    meta.classList.add('is-bad');
+    meta.textContent = 'This folder is not there any more.';
+  } else if (!s.readable) {
+    meta.classList.add('is-bad');
+    meta.textContent = 'Ground Control cannot read this folder.';
+  } else if (s.kind === 'project') {
+    meta.textContent = 'One project';
+  } else {
+    const n = s.projectCount;
+    meta.textContent = n === null ? '' : n === 1 ? '1 project' : n + ' projects';
+  }
+  // A folder named on the command line is here for this run only. Saying so
+  // beats the user wondering why it vanished on the next launch.
+  if (s.ephemeral) {
+    meta.textContent += (meta.textContent ? ' · ' : '') + 'this run only (--root)';
+  }
+  body.append(meta);
+  row.append(body);
+
+  const x = h('button', 'src-item-x');
+  x.type = 'button';
+  x.append(icon('i-x'));
+  x.title = 'Stop watching ' + s.path + ' (the folder itself is left alone)';
+  x.setAttribute('aria-label', x.title);
+  x.addEventListener('click', async () => {
+    x.disabled = true;
+    try {
+      const data = await getJSON('/api/sources/' + encodeURIComponent(s.id), { method: 'DELETE' });
+      src.meta = data;
+      src.list = data.sources || [];
+      announce(s.display + ' is no longer being watched. The folder itself was not touched.');
+      srcRenderHeader();
+      srcRenderOptions();
+      repaint();
+      loadProjects(true);
+    } catch (err) {
+      x.disabled = false;
+      wbToast('Could not remove that folder: ' + err.message, 'bad');
+    }
+  });
+  row.append(x);
+  return row;
+}
+
+/* ── add a folder ────────────────────────────────────────────────────── */
+
+const SRC_KINDS = [
+  { id: 'root', icon: 'i-folder', name: 'A folder of projects',
+    desc: 'Every folder inside it becomes its own card.' },
+  { id: 'project', icon: 'i-box', name: 'One project',
+    desc: 'The folder itself becomes a single card.' },
+];
+
+/**
+ * The one place a folder is added.
+ *
+ * `opts.path`  pre-fill the box (a drop that carried a real path)
+ * `opts.hits`  candidate paths to choose between (a drop that did not)
+ * `opts.name`  what was dropped, for the wording of the candidate list
+ */
+function srcOpenDialog(opts = {}) {
+  for (const stale of document.querySelectorAll('.src-dialog')) stale.remove();
+  srcClosePanel();
+
+  const dlg = h('dialog', 'src-dialog');
+  dlg.setAttribute('aria-label', 'Add a folder to Ground Control');
+  const form = h('div', 'src-d-in');
+  dlg.append(form);
+
+  let typed = opts.path || '';
+  let kind = null;                 // null = take the server's own reading
+  let peek = null;                 // the last inspect result
+  let peekFor = '';                // the path that result describes
+  let error = null;
+  let busy = false;
+  let hits = opts.hits || null;    // candidate list from a nameless drop
+  let searching = Boolean(opts.searching);
+  let browsing = null;             // the browse listing, when open
+  let peekSeq = 0;
+  let peekTimer = 0;
+
+  const close = () => {
+    clearTimeout(peekTimer);
+    peekSeq++;
+    try { dlg.close(); } catch { /* already closed */ }
+    dlg.remove();
+    if (src.dialog && src.dialog.el === dlg) src.dialog = null;
+  };
+
+  /* -- the live description of whatever is in the box ----------------- */
+  const runPeek = () => {
+    const target = typed.trim();
+    if (!target) { peek = null; peekFor = ''; paint(); return; }
+    if (peekFor === target) return;
+    const seq = ++peekSeq;
+    getJSON('/api/sources/inspect', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ path: target, kind: kind || undefined }),
+    }).then((info) => {
+      if (seq !== peekSeq) return;             // a later keystroke won
+      peek = info;
+      peekFor = target;
+      paint();
+    }).catch((err) => {
+      if (seq !== peekSeq) return;
+      peek = { ok: false, error: err.message };
+      peekFor = target;
+      paint();
+    });
+  };
+
+  const schedulePeek = () => {
+    clearTimeout(peekTimer);
+    peekTimer = setTimeout(runPeek, 220);
+  };
+
+  /* -- submit --------------------------------------------------------- */
+  const submit = async () => {
+    const target = typed.trim();
+    if (!target || busy) return;
+    busy = true;
+    error = null;
+    paint();
+    try {
+      const data = await getJSON('/api/sources', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify({ path: target, kind: kind || undefined }),
+      });
+      src.meta = data;
+      src.list = data.sources || [];
+      const added = data.source;
+      const n = data.projectsAdded;
+      announce('Now watching ' + added.path + '.');
+      wbToast(added.kind === 'project'
+        ? 'Added ' + added.display + '.'
+        : 'Added ' + added.display + ' - ' + (n === 1 ? '1 project' : (n || 0) + ' projects') + '.',
+      'ok');
+      close();
+      srcRenderHeader();
+      srcRenderOptions();
+      loadProjects(true);
+    } catch (err) {
+      busy = false;
+      error = err.message || 'That folder could not be added.';
+      paint();
+    }
+  };
+
+  /* -- the native chooser --------------------------------------------- *
+   *
+   * Inside GroundControl.app the shell owns a real NSOpenPanel, which comes up
+   * frontmost and as a sheet. Outside it, the server runs `choose folder`
+   * through osascript. Both hand back one absolute path or nothing at all.
+   */
+  const choose = async () => {
+    const accept = (p) => {
+      if (!p) return;
+      typed = p;
+      hits = null;
+      browsing = null;
+      peek = null;
+      peekFor = '';
+      paint();
+      runPeek();
+    };
+    if (srcShellPicker()) {
+      try { accept(await srcShellPicker()()); }
+      catch { error = 'The folder chooser could not be opened.'; paint(); }
+      return;
+    }
+    try {
+      const data = await getJSON('/api/pick-folder', { method: 'POST' });
+      if (data.cancelled || !data.ok) return;
+      typed = data.path;
+      hits = null;
+      browsing = null;
+      peek = data.inspect || null;
+      peekFor = data.path;
+      paint();
+    } catch {
+      error = 'The system folder picker could not be opened. Type or paste a path instead.';
+      paint();
+    }
+  };
+
+  /* -- the inline browser --------------------------------------------- */
+  const browseTo = async (target) => {
+    try {
+      browsing = await getJSON('/api/browse?path=' + encodeURIComponent(target));
+      error = null;
+    } catch (err) {
+      error = err.message;
+    }
+    paint();
+  };
+
+  /* -- paint ----------------------------------------------------------- */
+  function paint() {
+    clear(form);
+
+    form.append(h('h2', 'src-d-h', 'Add a folder'));
+    form.append(h('p', 'src-d-sub',
+      'Point Ground Control at a folder full of projects, or at a single project living anywhere '
+      + 'on disk. You can add as many as you like.'));
+
+    /* candidates from a drop the browser would not give us a path for */
+    if (searching) {
+      form.append(h('div', 'src-d-peek', 'Looking for “' + (opts.name || '') + '” under your home folder…'));
+    } else if (hits && hits.length) {
+      form.append(h('div', 'src-d-label', 'Is this the one you dropped?'));
+      const box = h('div', 'src-d-hits');
+      for (const hit of hits) {
+        const b = h('button', 'src-d-hit');
+        b.type = 'button';
+        b.append(icon(hit.kind === 'project' ? 'i-box' : 'i-folder'));
+        b.append(h('span', 'src-d-hit-p', srcShortPath(hit.path)));
+        if (hit.alreadyWatched) b.append(h('span', 'src-d-entry-t', 'watched'));
+        b.addEventListener('click', () => {
+          typed = hit.path;
+          peek = hit;
+          peekFor = hit.path;
+          hits = null;
+          paint();
+        });
+        box.append(b);
+      }
+      form.append(box);
+    } else if (hits) {
+      form.append(h('div', 'src-d-peek is-bad',
+        'Your browser did not hand over the location of that folder'
+        + (opts.name ? ' (“' + opts.name + '”)' : '')
+        + ', and nothing by that name turned up under your home folder. Choose it below instead.'));
+      hits = null;
+    }
+
+    /* the path box */
+    form.append(h('div', 'src-d-label', 'Folder'));
+    const row = h('div', 'src-d-row');
+    const input = h('input', null);
+    input.type = 'text';
+    input.value = typed;
+    input.placeholder = '/Users/you/dev/my-project';
+    input.spellcheck = false;
+    input.autocomplete = 'off';
+    input.autocapitalize = 'off';
+    input.setAttribute('aria-label', 'Folder path');
+    input.addEventListener('input', () => { typed = input.value; error = null; schedulePeek(); });
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); if (peek && peek.ok && !peek.alreadyWatched) submit(); }
+    });
+    row.append(input);
+
+    if (!src.meta || src.meta.canPickFolder !== false) {
+      const pick = h('button', 'btn');
+      pick.type = 'button';
+      pick.append(icon('i-folder'), h('span', null, 'Choose…'));
+      pick.title = 'Open the system folder chooser';
+      pick.addEventListener('click', choose);
+      row.append(pick);
+    }
+
+    const browseBtn = h('button', 'btn');
+    browseBtn.type = 'button';
+    browseBtn.append(icon(browsing ? 'i-x' : 'i-search'), h('span', null, browsing ? 'Hide' : 'Browse'));
+    browseBtn.addEventListener('click', () => {
+      if (browsing) { browsing = null; paint(); return; }
+      browseTo(typed.trim() || (src.meta && src.meta.homeDir) || '~');
+    });
+    row.append(browseBtn);
+    form.append(row);
+
+    /* the browser */
+    if (browsing) {
+      form.append(srcBrowsePanel(browsing, {
+        onGo: browseTo,
+        onPick: (p) => { typed = p; browsing = null; peekFor = ''; paint(); runPeek(); },
+      }));
+    }
+
+    /* what Ground Control makes of it */
+    form.append(srcPeekBox(peek, typed.trim()));
+
+    /* how it will be read */
+    if (peek && peek.ok && !peek.alreadyWatched) {
+      form.append(h('div', 'src-d-label', 'Read it as'));
+      const kinds = h('div', 'src-d-kinds');
+      const chosen = kind || peek.kind;
+      for (const k of SRC_KINDS) {
+        const b = h('button', 'src-d-kind');
+        b.type = 'button';
+        b.setAttribute('aria-pressed', String(chosen === k.id));
+        b.append(icon(k.icon));
+        const t = h('span', null);
+        t.append(h('span', 'src-d-kind-n', k.name));
+        t.append(h('span', 'src-d-kind-d', k.desc));
+        b.append(t);
+        b.addEventListener('click', () => {
+          kind = k.id;
+          peekFor = '';                  // re-describe under the new reading
+          paint();
+          runPeek();
+        });
+        kinds.append(b);
+      }
+      form.append(kinds);
+    }
+
+    form.append(h('div', 'src-d-err', error || ''));
+
+    const foot = h('div', 'src-d-foot');
+    const cancel = h('button', 'btn', 'Cancel');
+    cancel.type = 'button';
+    cancel.addEventListener('click', close);
+    foot.append(cancel);
+
+    const go = h('button', 'btn btn-primary');
+    go.type = 'button';
+    go.append(icon('i-plus'), h('span', null, 'Add folder'));
+    go.disabled = busy || !peek || !peek.ok || Boolean(peek.alreadyWatched);
+    if (busy) go.classList.add('is-busy');
+    go.addEventListener('click', submit);
+    foot.append(go);
+    form.append(foot);
+
+    setTimeout(() => {
+      if (browsing || searching) return;
+      input.focus();
+      try { input.setSelectionRange(typed.length, typed.length); } catch { /* not focusable yet */ }
+    }, 0);
+  }
+
+  paint();
+  if (typed) runPeek();
+  document.body.append(dlg);
+  dlg.addEventListener('cancel', (ev) => { ev.preventDefault(); close(); });
+  dlg.showModal();
+
+  src.dialog = {
+    el: dlg,
+    close,
+    /** The locate sweep came back: fill the candidate list in place. */
+    setHits(found) {
+      searching = false;
+      if (found.length === 1 && !found[0].alreadyWatched) {
+        hits = null;
+        typed = found[0].path;
+        peek = found[0];
+        peekFor = found[0].path;
+      } else {
+        hits = found;
+      }
+      paint();
+    },
+  };
+}
+
+/** The verdict block: what Ground Control found, or why it will not take it. */
+function srcPeekBox(peek, target) {
+  const box = h('div', 'src-d-peek');
+  if (!target) {
+    box.textContent = 'Type a path, choose a folder, or drag one onto the window.';
+    return box;
+  }
+  if (!peek) {
+    box.textContent = 'Looking…';
+    return box;
+  }
+
+  if (!peek.ok) {
+    box.classList.add('is-bad');
+    const head = h('div', 'src-d-peek-h');
+    head.append(icon('i-alert'), h('span', null, 'This one will not work'));
+    box.append(head);
+    box.append(h('div', 'src-d-peek-p', peek.error || 'That folder cannot be added.'));
+    return box;
+  }
+  if (peek.alreadyWatched) {
+    const head = h('div', 'src-d-peek-h');
+    head.append(icon('i-check'), h('span', null, 'Already on the dashboard'));
+    box.append(head);
+    box.append(h('div', 'src-d-peek-p',
+      'Ground Control is already watching this folder'
+      + (peek.watchedAs ? ' as “' + peek.watchedAs.display + '”' : '') + '.'));
+    return box;
+  }
+
+  box.classList.add('is-good');
+  const head = h('div', 'src-d-peek-h');
+  head.append(icon('i-check'), h('span', null, peek.name));
+  box.append(head);
+
+  const isProject = peek.kind === 'project';
+  const n = peek.projectCount;
+  box.append(h('div', 'src-d-peek-p', isProject
+    ? 'One project' + (peek.isRepo ? ', a git repository' : '') + '. It gets its own card.'
+    : n === 0
+      ? 'No folders inside it yet: anything you put there will show up on its own.'
+      : (n === 1 ? '1 folder inside it' : n + ' folders inside it') + ', each becoming its own card.'));
+
+  if (!isProject && peek.sample && peek.sample.length) {
+    box.append(h('div', 'src-d-peek-s', peek.sample.join(' · ')
+      + (n > peek.sample.length ? ' · +' + (n - peek.sample.length) + ' more' : '')));
+  }
+  return box;
+}
+
+/** The inline directory browser. Directory names only: no file contents. */
+function srcBrowsePanel(data, handlers) {
+  const box = h('div', 'src-d-browse');
+
+  const crumb = h('div', 'src-d-crumb');
+  const up = h('button', 'src-d-up');
+  up.type = 'button';
+  up.append(icon('i-up'));
+  up.title = 'Up one level';
+  up.disabled = !data.parent;
+  if (data.parent) up.addEventListener('click', () => handlers.onGo(data.parent));
+  crumb.append(up);
+
+  const home = h('button', 'src-d-home');
+  home.type = 'button';
+  home.append(icon('i-home'));
+  home.title = 'Home folder';
+  home.addEventListener('click', () => handlers.onGo(data.home));
+  crumb.append(home);
+
+  const where = h('span', 'src-d-cpath', srcShortPath(data.path));
+  where.title = data.path;
+  crumb.append(where);
+
+  const useThis = h('button', 'btn btn-sm');
+  useThis.type = 'button';
+  useThis.textContent = 'Use this';
+  useThis.title = 'Use ' + data.path;
+  useThis.addEventListener('click', () => handlers.onPick(data.path));
+  crumb.append(useThis);
+  box.append(crumb);
+
+  const list = h('div', 'src-d-list');
+  if (!data.entries.length) {
+    list.append(h('div', 'src-d-empty', data.hiddenCount
+      ? 'Nothing here but hidden and build folders.'
+      : 'No folders in here.'));
+  }
+  for (const e of data.entries) {
+    const b = h('button', 'src-d-entry');
+    b.type = 'button';
+    b.classList.toggle('is-project', e.isProject);
+    b.append(icon(e.isProject ? 'i-box' : 'i-folder'));
+    b.append(h('span', 'src-d-entry-n', e.name));
+    if (e.watched) b.append(h('span', 'src-d-entry-t', 'watched'));
+    else if (e.isProject) b.append(h('span', 'src-d-entry-t', 'project'));
+    // A click walks into the folder; the + picks it.
+    b.addEventListener('click', () => handlers.onGo(e.path));
+    const go = h('span', 'src-d-entry-go');
+    go.append(icon('i-plus'));
+    go.title = 'Use ' + e.path;
+    go.addEventListener('click', (ev) => { ev.stopPropagation(); handlers.onPick(e.path); });
+    b.append(go);
+    list.append(b);
+  }
+  box.append(list);
+  return box;
+}
+
+/* ── drag and drop ───────────────────────────────────────────────────── *
+ *
+ * A Finder drag is the obvious way to add a folder, and it is also the one the
+ * browser makes hardest: a dropped directory arrives as a NAME, with its
+ * location deliberately withheld. Three routes are tried in order:
+ *
+ *   1. `text/uri-list`: Safari, and the app shell, hand over a real file://
+ *      URL. This is the happy path: one confirmation and it is in.
+ *   2. `window.groundControlAddFolders`, which GroundControl.app calls with the
+ *      real path AppKit gave it.
+ *   3. the name alone: ask the server to look for it and offer whatever it
+ *      finds. Nothing is ever added on the strength of a guess.
+ */
+
+function srcDropPathsFrom(dt) {
+  const out = [];
+  const push = (text) => {
+    if (typeof text !== 'string') return;
+    for (const line of text.split(/[\n\r]+/)) {
+      const t = line.trim();
+      if (!t || t.startsWith('#')) continue;
+      if (/^file:\/\//i.test(t) || t.startsWith('/') || t.startsWith('~/')) {
+        if (!out.includes(t)) out.push(t);
+      }
+    }
+  };
+  try { push(dt.getData('text/uri-list')); } catch { /* not offered */ }
+  try { push(dt.getData('text/plain')); } catch { /* not offered */ }
+  return out;
+}
+
+function srcDropNames(dt) {
+  const names = [];
+  const add = (n) => { if (n && !names.includes(n)) names.push(n); };
+  const items = dt.items;
+  if (items && items.length) {
+    for (const item of items) {
+      if (item.kind !== 'file') continue;
+      let entry = null;
+      try { entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null; } catch { entry = null; }
+      if (entry && entry.isDirectory) { add(entry.name); continue; }
+      let f = null;
+      try { f = item.getAsFile ? item.getAsFile() : null; } catch { f = null; }
+      // A directory dropped into a browser arrives with no MIME type.
+      if (f && !f.type) add(f.name);
+    }
+  }
+  if (!names.length && dt.files) {
+    for (const f of dt.files) if (!f.type) add(f.name);
+  }
+  return names;
+}
+
+function srcHasFiles(dt) {
+  if (!dt) return false;
+  const types = dt.types ? Array.from(dt.types) : [];
+  return types.includes('Files') || types.includes('text/uri-list')
+    || types.includes('public.file-url');
+}
+
+/**
+ * Show or hide the drop overlay.
+ *
+ * `dragleave` is not reliable enough to be the only way out: a drag that ends
+ * in another window, or is cancelled with Escape, can leave the last leave
+ * event unfired and the overlay stuck over the dashboard. `dragover` fires
+ * continuously for as long as a drag is actually over the page, so its absence
+ * is the liveness signal: if a second goes by without one, the drag is gone.
+ */
+let srcDropWatchdog = 0;
+
+function srcShowDrop(on) {
+  if (!el.dropzone) return;
+  el.dropzone.hidden = !on;
+  clearTimeout(srcDropWatchdog);
+  if (on) srcDropWatchdog = setTimeout(() => srcShowDrop(false), 1200);
+}
+
+async function srcHandleDrop(ev) {
+  const dt = ev.dataTransfer;
+  if (!dt) return;
+
+  const paths = srcDropPathsFrom(dt);
+  if (paths.length) return srcOpenDialog({ path: paths[0] });
+
+  const names = srcDropNames(dt);
+  if (!names.length) return srcOpenDialog();
+
+  // No path came with the drop. Open the dialog straight away so the drop
+  // feels answered, then fill in whatever the search turns up.
+  srcOpenDialog({ name: names[0], hits: [], searching: true });
+  const dialog = src.dialog;
+  let found = [];
+  try {
+    const data = await getJSON('/api/sources/locate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ name: names[0] }),
+    });
+    found = (data.matches || []).filter((m) => m.ok || m.alreadyWatched);
+  } catch { /* the dialog falls back to "choose it below" */ }
+  if (src.dialog === dialog && dialog) dialog.setHits(found);
+  return undefined;
+}
+
+/* ── stop watching, from the project page ────────────────────────────── *
+ *
+ * A folder added on its own has a second, non-destructive way off the
+ * dashboard, and it sits right next to the destructive one so the difference
+ * is impossible to miss: "Stop watching" leaves the folder exactly where it is.
+ * Only shown for a `project`-kind source: a project inside a watched folder
+ * cannot be removed on its own without hiding the folder it lives in.
+ */
+function srcDetachAction(into, d) {
+  // Decided from the project's own payload, not from `src.list`: a deep link
+  // paints this page before the source list has finished loading.
+  if (d.sourceKind !== 'project' || !d.sourceId) return;
+
+  const b = h('button', 'btn btn-sm src-detach');
+  b.type = 'button';
+  b.append(icon('i-x'), h('span', null, 'Stop watching'));
+  b.title = 'Take ' + (d.name || d.id) + ' off the dashboard. The folder stays exactly where it is.';
+  b.addEventListener('click', async () => {
+    b.disabled = true;
+    try {
+      const data = await getJSON('/api/sources/' + encodeURIComponent(d.sourceId), { method: 'DELETE' });
+      src.meta = data;
+      src.list = data.sources || [];
+      wbToast((d.name || d.id) + ' is off the dashboard. The folder was not touched.', 'ok');
+      location.hash = '/';
+      srcRenderHeader();
+      loadProjects(true);
+    } catch (err) {
+      b.disabled = false;
+      wbToast('Could not remove that folder: ' + err.message, 'bad');
+    }
+  });
+  into.append(b);
+}
+
+/* ── the GroundControl.app bridge ────────────────────────────────────── *
+ *
+ * Two things the app shell can do that a page cannot: hand over the real path
+ * of a dragged folder, and open a proper NSOpenPanel. Both are optional: in a
+ * plain browser tab neither hook exists and the server-side equivalents are
+ * used instead.
+ */
+
+/** The shell's folder chooser as a promise, or null when not in the app. */
+function srcShellPicker() {
+  const mh = window.webkit && window.webkit.messageHandlers;
+  if (!mh || !mh.gcPickFolder) return null;
+  return () => new Promise((resolve) => {
+    let settled = false;
+    const finish = (p) => { if (!settled) { settled = true; resolve(p || null); } };
+    window.groundControlPickedFolder = finish;
+    try { mh.gcPickFolder.postMessage({}); }
+    catch { finish(null); }
+    // The panel has no timeout of its own; this only guards against a shell
+    // that went away mid-dialog, which would otherwise hang the button.
+    setTimeout(() => finish(null), 10 * 60 * 1000);
+  });
+}
+
+/**
+ * The app shell's way in: GroundControl.app hands over the real path AppKit
+ * gave it, which is the one place a drop is never ambiguous.
+ */
+window.groundControlAddFolders = function groundControlAddFolders(paths) {
+  const list = Array.isArray(paths) ? paths : [paths];
+  const first = list.find((p) => typeof p === 'string' && p);
+  if (first) srcOpenDialog({ path: first });
+  return Boolean(first);
+};
+
+/* ── boot ────────────────────────────────────────────────────────────── */
+
+function srcBoot() {
+  el.srcBtn.addEventListener('click', srcTogglePanel);
+  el.srcBlankAdd.addEventListener('click', () => srcOpenDialog());
+
+  /* Drag-and-drop over the whole window. dragenter/dragleave nest, so they are
+   * counted rather than trusted individually: otherwise crossing a child
+   * element flickers the overlay off and back on. */
+  window.addEventListener('dragenter', (ev) => {
+    if (!srcHasFiles(ev.dataTransfer)) return;
+    ev.preventDefault();
+    src.dragDepth++;
+    srcShowDrop(true);
+  });
+  window.addEventListener('dragover', (ev) => {
+    if (!srcHasFiles(ev.dataTransfer)) return;
+    ev.preventDefault();
+    try { ev.dataTransfer.dropEffect = 'copy'; } catch { /* read-only here */ }
+    if (src.dragDepth) srcShowDrop(true);          // keeps the watchdog fed
+  });
+  window.addEventListener('dragleave', (ev) => {
+    if (!srcHasFiles(ev.dataTransfer)) return;
+    src.dragDepth = Math.max(0, src.dragDepth - 1);
+    if (!src.dragDepth) srcShowDrop(false);
+  });
+  window.addEventListener('drop', (ev) => {
+    if (!srcHasFiles(ev.dataTransfer)) return;
+    ev.preventDefault();
+    src.dragDepth = 0;
+    srcShowDrop(false);
+    srcHandleDrop(ev);
+  });
+  // A drag that ends outside the window never fires `drop`.
+  window.addEventListener('dragend', () => { src.dragDepth = 0; srcShowDrop(false); });
+
+  document.addEventListener('keydown', (ev) => {
+    if (ev.defaultPrevented) return;
+    const tag = (ev.target && ev.target.tagName) || '';
+    const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(tag) || (ev.target && ev.target.isContentEditable);
+    // Cmd/Ctrl+Shift+O adds a folder from anywhere; plain F opens the list.
+    if ((ev.metaKey || ev.ctrlKey) && ev.shiftKey && (ev.key === 'o' || ev.key === 'O')) {
+      ev.preventDefault();
+      srcOpenDialog();
+    } else if (ev.key === 'f' && !typing && !ev.metaKey && !ev.ctrlKey && !ev.altKey
+      && !document.querySelector('dialog[open]')) {
+      // Not while a modal is up: the panel would open behind it.
+      ev.preventDefault();
+      srcTogglePanel();
+    }
+  });
+
+  srcLoad();
+}
+
+/* A guard flag, because the source list is also what the empty-grid state and
+ * the header depend on: booting twice would double every drag listener. */
+let srcReady = false;
+
+function srcBootOnce() {
+  if (srcReady) return;
+  srcReady = true;
+  try { srcBoot(); }
+  catch (err) {
+    // A broken Sources panel must never take the dashboard with it.
+    console.error('[sources] boot failed:', err);
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', srcBootOnce, { once: true });
+} else {
+  srcBootOnce();
 }

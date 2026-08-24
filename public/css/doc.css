@@ -382,7 +382,7 @@
 .ground-control-doc .task-checkbox:checked {
   background: var(--ember);
   border-color: var(--ember);
-  /* Inline SVG check mark — no external asset, no network request. */
+  /* Inline SVG check mark: no external asset, no network request. */
   background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%230a0b0d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M2.5 6.2l2.3 2.3 4.7-5'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: center;
@@ -581,7 +581,7 @@
   border-left-color: var(--ember);
 }
 
-/* Level indentation — data attribute, class, or real nesting. */
+/* Level indentation: data attribute, class, or real nesting. */
 .ground-control-doc-toc [data-level="1"], .ground-control-doc-toc .lvl-1 > a, .ground-control-doc-toc a[data-level="1"] { padding-left: 0.9em; font-weight: 600; color: var(--text); }
 .ground-control-doc-toc [data-level="2"], .ground-control-doc-toc .lvl-2 > a, .ground-control-doc-toc a[data-level="2"] { padding-left: 0.9em; }
 .ground-control-doc-toc [data-level="3"], .ground-control-doc-toc .lvl-3 > a, .ground-control-doc-toc a[data-level="3"] { padding-left: 1.9em; }

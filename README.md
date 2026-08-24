@@ -1,13 +1,13 @@
 # Ground Control
 
-A live dashboard over a folder full of half-finished projects — and a place to
-work from, not just look at.
+A live dashboard over the projects you point it at, and a place to work from,
+not just look at.
 
-Point it at a directory of repos and it tells you what state everything is in,
-which projects have coding agents running in them right now, and puts each
-project's onboarding document one click away. It can write that document when
-one doesn't exist, open any project in your editor, and help you clear out the
-folders that turned out to be nothing.
+Give it a folder of repos, a single project from anywhere on disk, or any mix of
+the two, and it tells you what state everything is in, which projects have coding
+agents running in them right now, and puts each project's onboarding document one
+click away. It can write that document when one doesn't exist, open any project
+in your editor, and help you clear out the folders that turned out to be nothing.
 
 ## Run it as an app
 
@@ -16,7 +16,7 @@ folders that turned out to be nothing.
 ```
 
 Then launch it from Launchpad, Spotlight, or the Dock. It is a native macOS
-application — its own icon, window, and menu bar — wrapping the dashboard in a
+application (its own icon, window, and menu bar) wrapping the dashboard in a
 `WKWebView`. A Swift shell rather than Electron: **1.9 MB instead of ~150 MB**,
 and it launches instantly.
 
@@ -33,18 +33,54 @@ Gatekeeper prompt.
 ## Or run it as a server
 
 ```bash
-./bin/ground-control                      # watch ~/coding_projects, open a browser
-./bin/ground-control ~/other/projects     # watch a different folder
+./bin/ground-control                      # watch the folders you've added
+./bin/ground-control ~/other/projects     # also watch this one, just for this run
 ./bin/ground-control --port 8080          # different port
 ./bin/ground-control --no-open            # don't launch a browser
 ```
 
-Default root is `~/coding_projects`, default port `7377`.
+Default port `7377`. On a first run with nothing added yet it starts on
+`~/coding_projects`; after that the folders you add from the dashboard are the
+folders it watches, and a path on the command line is a one-off rather than a
+setting.
 
-**No dependencies.** Node standard library and vanilla browser JS — no npm
+**No dependencies.** Node standard library and vanilla browser JS: no npm
 install, no build step, no CDN. `node server.js` is the whole thing.
 
 ---
+
+## The folders it watches
+
+Ground Control watches a **list** of folders, not one directory, and the list is
+yours. Two kinds, freely mixed:
+
+- **a folder of projects**: every folder inside it becomes a card, the way
+  `~/coding_projects` always worked
+- **one project**: a single folder anywhere on disk becomes a single card
+
+Add one by **dragging it onto the window**, with the system folder chooser, by
+browsing from inside the app, or by pasting a path (`~/…` and `file://` URLs
+both work). Ground Control looks at the folder first and tells you what it found,
+"one project, a git repository", or "11 folders inside it, each becoming its own
+card", and lets you flip that reading with one click before committing.
+
+The list lives in `~/.ground-control/sources.json` and survives restarts. System
+folders and your bare home directory are refused, with a sentence explaining why,
+rather than accepted and then quietly walking 200,000 files.
+
+**Removing a folder takes it off the dashboard and does nothing else.** Nothing
+on disk is moved, renamed, or deleted: that is Reclaim's job, behind a typed
+confirmation.
+
+With one folder watched, none of this is visible: the header shows its path the
+way it always did. With several, cards gain a small chip naming where they came
+from and the toolbar gains a folder filter.
+
+A dragged folder is the awkward case, because browsers hand over a folder's
+*name* and deliberately withhold its path. Ground Control tries the drag's
+`file://` URL first, then the macOS app's own drop handler (which has the real
+path), and only then falls back to searching your home directory by name, and
+even then it asks you to confirm the hit rather than adding it on a guess.
 
 ## The grid
 
@@ -54,7 +90,7 @@ from the project's own documentation, and counts of docs, TODOs, and uncommitted
 files. Filter by text, status, stack, or agent activity; sort four ways. Filter
 state lives in the URL, so a reload keeps your view.
 
-Status comes from real activity — the last commit for a clean repo, the newest
+Status comes from real activity: the last commit for a clean repo, the newest
 file for a dirty or non-git folder:
 
 | | |
@@ -67,8 +103,8 @@ file for a dirty or non-git folder:
 
 A project page adds a 90-day commit heatmap, language composition, every
 document grouped by kind, the file tree, recent commits, and which files are
-dirty. The reader renders markdown properly — headings, tables, nested lists,
-syntax-highlighted code — with a table of contents. Projects whose explainer is
+dirty. The reader renders markdown properly: headings, tables, nested lists,
+syntax-highlighted code: with a table of contents. Projects whose explainer is
 a rendered HTML page open that page in a sandboxed frame.
 
 ## Finding the onboarding doc
@@ -85,7 +121,7 @@ document to feature:
 The card blurb is the first real paragraph of that document, with badges,
 headings, and code fences skipped.
 
-## Forge — writing the document
+## Forge: writing the document
 
 When a project has no good explainer, Forge builds one: a single self-contained
 HTML artifact, theme-aware, with the project's composition bar, commit heatmap,
@@ -93,7 +129,7 @@ entry points, and run commands rendered from real data.
 
 Two tiers. **Data-only** needs no model at all and always works offline.
 **Authored** shells out to the authenticated `claude` CLI with *read-only* access
-to the repo (Read/Glob/Grep — never Write, Edit, or Bash), so what it writes is
+to the repo (Read/Glob/Grep: never Write, Edit, or Bash), so what it writes is
 grounded in code it actually read.
 
 Authored generation runs on your **Claude subscription** via the CLI's existing
@@ -106,31 +142,31 @@ Generated artifacts go to a `.forge/` staging area. **Saving into a project is a
 separate, explicitly confirmed action**, and it refuses to overwrite an existing
 file without a second confirmation.
 
-## Workbench — open, hop, and watch
+## Workbench: open, hop, and watch
 
-Every project has an **Open** control — VS Code, Cursor, Xcode (Swift projects
+Every project has an **Open** control: VS Code, Cursor, Xcode (Swift projects
 only), Finder, or Terminal. From the reader, "open in editor" jumps to that file
 and line. `Cmd+K` opens a fuzzy switcher for hopping between projects; `Cmd+Enter`
 opens the highlighted one in your editor.
 
 Ground Control also shows which projects have **coding agents running in them right
-now** — a live pulse on the card, what the agent is currently doing, and a
+now**: a live pulse on the card, what the agent is currently doing, and a
 timeline of recent activity on the project page, read from Claude Code's own
 session transcripts. It **observes only**: it never signals or kills an agent,
 never writes anything under `~/.claude`, and surfaces short status labels rather
 than your conversations.
 
-## Reclaim — clearing out the dead ones
+## Reclaim: clearing out the dead ones
 
 Flags folders that never really started or were long abandoned, scored on
-*meaningful* content — the ignore list is applied first, so a 341 MB folder that
+*meaningful* content: the ignore list is applied first, so a 341 MB folder that
 is 99% virtualenv is correctly seen as five real files.
 
 **Nothing is ever permanently deleted.** Removal moves the folder to the macOS
 Trash, so anything can be dragged back out. There is no `rm -rf` in this codebase
 and no permanent-delete option.
 
-Removal is refused outright — not warned about — when a folder has uncommitted
+Removal is refused outright (not warned about) when a folder has uncommitted
 changes, unpushed commits, commits but no remote at all (the folder is the only
 copy), stashed work, unmerged branches, more than 40 meaningful files or 20 MB,
 activity in the last 30 days, a coding agent currently running in it, or if it is
@@ -141,10 +177,10 @@ delete and no keyboard shortcut. Every removal is logged to
 ## Tests
 
 ```bash
-npm test          # 39 tests, ~2.7s, no dependencies
+npm test          # 66 tests, ~3s, no dependencies
 ```
 
-Node's built-in runner — no framework, nothing to install. The suite is
+Node's built-in runner: no framework, nothing to install. The suite is
 weighted toward the things that would be expensive to get wrong rather than
 toward coverage percentage:
 
@@ -154,9 +190,14 @@ toward coverage percentage:
   refused.
 - **Path traversal** on every file-reading route, asserting both the refusal and
   that `/etc/passwd` never appears in a response body.
-- **Secret redaction** — a fixture repo containing a `.env`, a `creds.py` and a
+- **Secret redaction**: a fixture repo containing a `.env`, a `creds.py` and a
   `.pem` is briefed, and the test fails if the secret value appears anywhere in
   the brief. The brief is handed to a model, so this one matters.
+- **The source list**: that a folder added outside the root is scanned and
+  path-confined exactly like one inside it, that project ids stay stable when a
+  folder is added after them, that the same folder reached two ways yields one
+  card, that removal leaves the folder on disk untouched, and that the list
+  survives a restart.
 - **Regressions from real bugs**: a root README losing to a nested `CLAUDE.md`;
   `#StockPortfolio` with no space leaking in as a blurb; virtualenv bulk counting
   as meaningful content; and a live agent process being reported as *working*
@@ -169,6 +210,7 @@ return a root outside `tmp`, so no test can point at real projects.
 
 ```
 server.js               HTTP, static files, SSE, path-traversal defense
+lib/sources.js          the watched-folder registry, detection, browse, picker
 lib/scan.js             one walk per project: files, sizes, languages, TODOs, mtimes
 lib/git.js              branch, commits, dirty state, 90-day activity
 lib/docs.js             doc discovery, classification, featured pick, blurb
@@ -196,17 +238,20 @@ CONTRACT*.md            the specs the build agents worked against
   cached 5s; `?fresh=1` forces a rescan.
 - Everything renders untrusted input. Markdown is escaped rather than passed
   through, `javascript:` and `data:` URLs are rejected, and every path is checked
-  three ways — syntactically, after `path.resolve`, and after `fs.realpath` — so a
+  three ways (syntactically, after `path.resolve`, and after `fs.realpath`) so a
   symlink pointing out of the folder returns 403.
 - One broken project cannot fail a scan.
 - Ground Control is read-only over your projects except for two explicitly confirmed
-  actions: saving a generated artifact, and moving a folder to Trash.
+  actions: saving a generated artifact, and moving a folder to Trash. Adding and
+  removing watched folders writes only to `~/.ground-control/sources.json`.
 
 ## API
 
 `GET /api/projects` · `GET /api/project/:id` · `GET /api/doc` · `GET /api/raw` ·
 `GET /api/stream` · `GET/POST /api/forge/*` · `GET /api/editors` ·
 `POST /api/open` · `GET /api/agents[/:id]` · `GET /api/reclaim[/:id]` ·
-`POST /api/reclaim/:id/trash`
+`POST /api/reclaim/:id/trash` · `GET/POST /api/sources` ·
+`DELETE /api/sources/:id` · `POST /api/sources/{inspect,locate,reorder}` ·
+`GET /api/browse` · `POST /api/pick-folder`
 
 Shapes are documented in the `CONTRACT*.md` files.

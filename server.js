@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Ground Control — a local, zero-dependency dashboard over a folder of projects.
+ * Ground Control: a local, zero-dependency dashboard over a folder of projects.
  *
  *   node server.js [--root <dir>] [--port <n>] [--open]
  *
@@ -18,12 +18,14 @@ import { fileURLToPath } from 'node:url';
 import * as util from './lib/util.js';
 import * as scan from './lib/scan.js';
 import * as docslib from './lib/docs.js';
-// Forge (CONTRACT-FORGE.md) — appended feature, routes live at the bottom.
+// Forge (CONTRACT-FORGE.md): appended feature, routes live at the bottom.
 import * as brieflib from './lib/brief.js';
 import * as jobslib from './lib/jobs.js';
 import * as generate from './lib/generate.js';
-// The local-model tier (CONTRACT-LOCAL.md) — ollama status and model list.
+// The local-model tier (CONTRACT-LOCAL.md): ollama status and model list.
 import * as locallib from './lib/local.js';
+// The source registry (CONTRACT-SOURCES.md): every folder Ground Control watches.
+import * as sourceslib from './lib/sources.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -48,22 +50,83 @@ const DEFAULT_ROOT = path.join(os.homedir(), 'coding_projects');
 const DEFAULT_PORT = 7377;
 
 function parseArgs(argv) {
-  const opts = { root: DEFAULT_ROOT, port: DEFAULT_PORT, open: false };
+  const opts = { root: null, port: DEFAULT_PORT, open: false, config: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--root' && argv[i + 1]) { opts.root = argv[++i]; }
     else if (a.startsWith('--root=')) { opts.root = a.slice(7); }
+    else if (a === '--config' && argv[i + 1]) { opts.config = argv[++i]; }
+    else if (a.startsWith('--config=')) { opts.config = a.slice(9); }
     else if (a === '--port' && argv[i + 1]) { opts.port = Number(argv[++i]) || DEFAULT_PORT; }
     else if (a.startsWith('--port=')) { opts.port = Number(a.slice(7)) || DEFAULT_PORT; }
     else if (a === '--open') { opts.open = true; }
   }
-  opts.root = path.resolve(opts.root);
+  if (opts.root) opts.root = path.resolve(opts.root);
+  if (!opts.config && process.env.GROUND_CONTROL_CONFIG) opts.config = process.env.GROUND_CONTROL_CONFIG;
+  if (opts.config) opts.config = path.resolve(opts.config);
   return opts;
 }
 
 const ARGS = parseArgs(process.argv.slice(2));
-const ROOT = ARGS.root;
 const PUBLIC_DIR = path.join(__dirname, 'public');
+
+/* ------------------------------------------------------------------ *
+ * Sources: every folder the dashboard watches (CONTRACT-SOURCES.md)
+ *
+ * Ground Control started as a window onto one directory. It is now a window onto a
+ * list of them: folders-of-projects, single projects scattered around the
+ * disk, or both. `--root` still works and still names the folder shown first;
+ * it just seeds the list instead of being the whole of it.
+ * ------------------------------------------------------------------ */
+
+const SOURCES = new sourceslib.Registry({
+  file: ARGS.config || undefined,
+  seedRoot: ARGS.root || DEFAULT_ROOT,
+  ensure: ARGS.root || undefined,
+});
+
+if (SOURCES.loadError) console.error('[sources]', SOURCES.loadError);
+
+/**
+ * The folder the header calls "the root". Kept as a live getter rather than a
+ * constant because the user can now remove it while the server is running.
+ */
+function primaryRoot() {
+  const p = SOURCES.primary();
+  return p ? p.path : null;
+}
+
+/**
+ * The path-safety anchor for one project: the source it came from. Every guard
+ * that used to compare against a single global ROOT compares against this, so
+ * a project in an added folder is exactly as protected as one in the original
+ * root, and a project belonging to no source at all is refused outright.
+ */
+function anchorFor(project) {
+  if (!project || !project.path) return null;
+  if (project.sourceKind === 'project') return path.dirname(path.resolve(project.path));
+  if (project.sourcePath) return path.resolve(project.sourcePath);
+  const owner = SOURCES.ownerOf(project.path);
+  if (!owner) return null;
+  return owner.kind === 'project' ? path.dirname(owner.path) : owner.path;
+}
+
+/** Watchers that want to know the source list changed (the SSE clients). */
+const sourceWatchers = new Set();
+
+function subscribeSources(cb) {
+  sourceWatchers.add(cb);
+  return () => sourceWatchers.delete(cb);
+}
+
+/** Called after any mutation of the registry. Never throws at the caller. */
+function sourcesChanged() {
+  cache = null;
+  scanGeneration++;
+  for (const cb of [...sourceWatchers]) {
+    try { cb(); } catch { /* a dead client must not break the next one */ }
+  }
+}
 
 /* ------------------------------------------------------------------ *
  * Scan cache
@@ -81,22 +144,39 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const CACHE_TTL_MS = 30000;
 let cache = null;          // { payload, at }
 let inFlight = null;       // dedupe concurrent rescans
+/**
+ * Bumped whenever the source list changes. A scan that started against the old
+ * list must not be handed out as, or cached as, the answer for the new one,
+ * otherwise adding a folder can report zero projects because a scan already in
+ * flight (which had never heard of it) finished first.
+ */
+let scanGeneration = 0;
+let inFlightGeneration = -1;
 
 async function getScan(fresh) {
   if (!fresh && cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.payload;
-  if (inFlight) return inFlight;
+  if (inFlight && inFlightGeneration === scanGeneration) return inFlight;
+  const generation = scanGeneration;
+  inFlightGeneration = generation;
   inFlight = (async () => {
     try {
-      const payload = await scan.scanRoot(ROOT);
-      cache = { payload, at: Date.now() };
+      const payload = await scan.scanSources(SOURCES.all());
+      payload.sources = SOURCES.describeAll();
+      if (generation === scanGeneration) cache = { payload, at: Date.now() };
       return payload;
     } catch (err) {
       console.error('[ground-control] scan failed:', (err && err.stack) || err);
       // Serve the last good payload rather than blanking the dashboard.
       if (cache) return cache.payload;
-      return { root: ROOT, scannedAt: new Date().toISOString(), durationMs: 0, projects: [] };
+      return {
+        root: primaryRoot(),
+        sources: SOURCES.describeAll(),
+        scannedAt: new Date().toISOString(),
+        durationMs: 0,
+        projects: [],
+      };
     } finally {
-      inFlight = null;
+      if (inFlightGeneration === generation) { inFlight = null; inFlightGeneration = -1; }
     }
   })();
   return inFlight;
@@ -263,7 +343,7 @@ async function handleRaw(req, res, query) {
 }
 
 /* ------------------------------------------------------------------ *
- * /api/stream — Server-Sent Events
+ * /api/stream: Server-Sent Events
  * ------------------------------------------------------------------ */
 
 const DEBOUNCE_MS = 800;
@@ -284,6 +364,7 @@ function handleStream(req, res) {
   let pingTimer = null;
   let unwatchAgents = null;                                 // Workbench §4
   let unwatchForge = null;                                  // Forge build indicator
+  let unwatchSources = null;                                // Sources §4
 
   const send = (event, data) => {
     if (closed) return false;
@@ -303,6 +384,7 @@ function handleStream(req, res) {
     if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
     if (unwatchAgents) { try { unwatchAgents(); } catch { /* ignore */ } unwatchAgents = null; }
     if (unwatchForge) { try { unwatchForge(); } catch { /* ignore */ } unwatchForge = null; }
+    if (unwatchSources) { try { unwatchSources(); } catch { /* ignore */ } unwatchSources = null; }
     for (const w of watchers) {
       try { w.close(); } catch { /* already dead */ }
     }
@@ -338,7 +420,7 @@ function handleStream(req, res) {
   /**
    * fs.watch throws on missing paths, hits EMFILE, and emits 'error' when a
    * watched directory is deleted. Every watcher is therefore wrapped and
-   * failures are silently skipped — a dashboard is not worth a crash.
+   * failures are silently skipped: a dashboard is not worth a crash.
    */
   const watch = (target) => {
     if (watchers.length >= 400) return;      // fd budget guard
@@ -347,7 +429,7 @@ function handleStream(req, res) {
       const w = fs.watch(target, { persistent: false }, onChange);
       w.on('error', () => { try { w.close(); } catch { /* ignore */ } });
       watchers.push(w);
-    } catch { /* ENOENT / EMFILE / EPERM — skip this path */ }
+    } catch { /* ENOENT / EMFILE / EPERM: skip this path */ }
   };
 
   // A project gaining or losing a live agent re-emits `projects` on the same
@@ -358,17 +440,37 @@ function handleStream(req, res) {
   // so the dashboard's build indicator appears and clears without polling.
   unwatchForge = jobslib.subscribeAll(() => onChange());
 
-  // Root, each project directory, and each repo's HEAD + refs.
-  watch(ROOT);
-  let names = [];
-  try { names = scan.listProjectDirs(ROOT); } catch { names = []; }
-  for (const name of names) {
-    const dir = path.join(ROOT, name);
+  // Adding or removing a folder re-emits `projects` at once: the grid must
+  // not wait 30 s for the cache to lapse before the new cards appear.
+  unwatchSources = subscribeSources(() => { rescan(); rewatch(); });
+
+  /* Every source, every project directory inside it, and each repo's
+   * HEAD + refs. Re-run from scratch whenever the source list changes, so a
+   * newly added folder is watched without reconnecting the stream. */
+  function rewatch() {
+    if (closed) return;
+    for (const w of watchers) { try { w.close(); } catch { /* already dead */ } }
+    watchers.length = 0;
+    for (const source of SOURCES.all()) {
+      if (source.kind === 'project') {
+        watchProject(source.path);
+        continue;
+      }
+      watch(source.path);
+      let names = [];
+      try { names = scan.listProjectDirs(source.path); } catch { names = []; }
+      for (const name of names) watchProject(path.join(source.path, name));
+    }
+  }
+
+  function watchProject(dir) {
     watch(dir);
     watch(path.join(dir, '.git', 'HEAD'));
     watch(path.join(dir, '.git', 'refs'));
     watch(path.join(dir, '.git', 'refs', 'heads'));
   }
+
+  rewatch();
 }
 
 /* ------------------------------------------------------------------ *
@@ -400,6 +502,13 @@ async function route(req, res) {
   // guard because the trash route is a POST; the handler checks methods itself.
   if (pathname === '/api/reclaim' || pathname.startsWith('/api/reclaim/')) {
     return handleReclaim(req, res, pathname, query);
+  }
+
+  // Sources (CONTRACT-SOURCES.md §3). Adding and removing folders are POSTs
+  // and DELETEs; the handler checks methods itself.
+  if (pathname === '/api/sources' || pathname.startsWith('/api/sources/')
+      || pathname === '/api/browse' || pathname === '/api/pick-folder') {
+    return handleSources(req, res, pathname, query);
   }
 
   if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -445,7 +554,11 @@ server.on('clientError', (err, socket) => {
 });
 
 server.listen(ARGS.port, () => {
-  console.log(`Ground Control watching ${ROOT} → http://localhost:${ARGS.port}`);
+  const watched = SOURCES.all();
+  const where = watched.length === 0 ? 'no folders yet'
+    : watched.length === 1 ? watched[0].path
+      : `${primaryRoot() || watched[0].path} and ${watched.length - 1} more folder${watched.length === 2 ? '' : 's'}`;
+  console.log(`Ground Control watching ${where} → http://localhost:${ARGS.port}`);
   // Warm the cache so the first page load is instant.
   getScan(true).catch(() => {});
   // Rebuild the Forge registry from disk. Without this a generated-but-unsaved
@@ -482,10 +595,10 @@ for (const sig of ['SIGINT', 'SIGTERM']) {
   });
 }
 
-export { server, getScan, ROOT };
+export { server, getScan, SOURCES, primaryRoot };
 
 /* ================================================================== *
- * GROUND_CONTROL FORGE — artifact generation (CONTRACT-FORGE.md §6)
+ * GROUND_CONTROL FORGE: artifact generation (CONTRACT-FORGE.md §6)
  *
  * Appended below the original server. Nothing above this line was
  * restructured; `route()` gained one dispatch line for `/api/forge/`.
@@ -506,7 +619,7 @@ let FORGE_DEFAULT_MODEL = generate.FALLBACK_MODEL;
 const FORGE_MODELS = ['claude-opus-5', 'claude-sonnet-4-5', 'claude-haiku-4-5'];
 import('./lib/house-style.js')
   .then((m) => { if (m && typeof m.DEFAULT_MODEL === 'string') FORGE_DEFAULT_MODEL = m.DEFAULT_MODEL; })
-  .catch(() => { /* not built yet — the fallback stands */ });
+  .catch(() => { /* not built yet: the fallback stands */ });
 
 // Stop any in-flight generation when the server goes down, so no orphaned
 // `claude` process outlives it. `exit` is used as well as the signals because
@@ -633,7 +746,7 @@ async function forgeStatus(res) {
     // Plain wording, per contract §0b.4: nothing here is billed per run.
     billingNote: 'Generation runs through your authenticated Claude CLI and counts toward your Claude subscription. Cost figures are list-price equivalents, not money charged.',
     // CONTRACT-LOCAL.md §5: never a money figure for the local tier.
-    localNote: 'The local tier runs a model on this machine through ollama. It works offline and costs nothing — no API key, no subscription usage.',
+    localNote: 'The local tier runs a model on this machine through ollama. It works offline and costs nothing: no API key, no subscription usage.',
   });
 }
 
@@ -779,16 +892,16 @@ async function forgeGenerate(req, res) {
     if (kind === 'code' && brief.code) {
       const c = brief.code;
       jobslib.appendProgress(job.id,
-        `brief ready — ${c.imports.length} external librar(ies), ${c.constructs.length} construct(s), `
+        `brief ready: ${c.imports.length} external librar(ies), ${c.constructs.length} construct(s), `
         + `${c.hosts.length} external host(s), ${c.envVars.length} environment variable(s)`);
     } else if (kind === 'design' && brief.design) {
       const d = brief.design;
       jobslib.appendProgress(job.id,
-        `brief ready — ${d.designDocs.length} design document(s), ${d.rationale.length} explanatory comment(s), `
+        `brief ready: ${d.designDocs.length} design document(s), ${d.rationale.length} explanatory comment(s), `
         + `${d.constants.length} constant(s) (${d.undocumentedConstants} undocumented), `
         + `${d.commitRationale.length} commit message(s) with a body`);
     } else {
-      jobslib.appendProgress(job.id, `brief ready — ${brief.composition.fileCount} files, ${brief.prose.length} existing document(s)`);
+      jobslib.appendProgress(job.id, `brief ready: ${brief.composition.fileCount} files, ${brief.prose.length} existing document(s)`);
     }
     generate.startGeneration({
       project, brief, kind, tier, audience, jobId: job.id, stagingPath,
@@ -911,7 +1024,7 @@ async function forgeSave(req, res, job) {
     return sendError(res, 403, 'only .html destinations are allowed');
   }
 
-  // Gate 0b: shape. Percent-encoding is rejected outright rather than decoded —
+  // Gate 0b: shape. Percent-encoding is rejected outright rather than decoded,
   // `..%2f..%2fevil.html` is contained by the gates below either way, but it
   // has no business becoming a literal filename in someone's repository.
   if (filename.length > 200 || /%|\\|\0/.test(filename)) {
@@ -924,7 +1037,7 @@ async function forgeSave(req, res, job) {
     return sendError(res, 403, 'invalid filename');
   }
 
-  // Gates 1–3: syntactic, post-path.resolve, post-fs.realpath — the same
+  // Gates 1–3: syntactic, post-path.resolve, post-fs.realpath: the same
   // resolveInside() used by /api/doc. Rejects `..`, absolute paths and
   // symlinks that escape the project root.
   let dest;
@@ -951,7 +1064,7 @@ async function forgeSave(req, res, job) {
     const st = await fsp.stat(dest);
     if (st.isDirectory()) return sendError(res, 403, 'destination is a directory');
     existing = { sizeBytes: st.size, mtimeISO: new Date(st.mtimeMs).toISOString() };
-  } catch { /* does not exist — the happy path */ }
+  } catch { /* does not exist: the happy path */ }
 
   if (existing && body.overwrite !== true) {
     return sendJSON(res, 409, { error: 'exists', existing });
@@ -982,7 +1095,7 @@ async function forgeSave(req, res, job) {
 
 
 /* ================================================================== *
- * GROUND_CONTROL WORKBENCH — open, hop, and watch (CONTRACT-WORKBENCH.md)
+ * GROUND_CONTROL WORKBENCH: open, hop, and watch (CONTRACT-WORKBENCH.md)
  *
  * Appended below Forge. Nothing above was restructured; `route()` gained one
  * dispatch line for `/api/editors`, `/api/open` and `/api/agents`, the two
@@ -991,7 +1104,7 @@ async function forgeSave(req, res, job) {
  * re-emits `projects` on the existing 800 ms debounce.
  *
  * Safety posture:
- *   §3 — Ground Control OBSERVES agents, with exactly one exception: POST
+ *   §3: Ground Control OBSERVES agents, with exactly one exception: POST
  *        /api/agents/stop sends SIGTERM to a session, under the four guards in
  *        CONTRACT-WORKBENCH.md §3a (the pid must already be attributed to the
  *        project; it is re-verified against a live ps/lsof immediately before
@@ -999,10 +1112,11 @@ async function forgeSave(req, res, job) {
  *        only, never SIGKILL). Nothing else here signals a process, nothing
  *        writes anywhere under ~/.claude, and no endpoint returns raw
  *        transcript content.
- *   §2 — /api/open executes a local application with a user-supplied path. It
+ *   §2: /api/open executes a local application with a user-supplied path. It
  *        runs execFile with an argv array (never a shell string) and puts the
- *        target through the same three gates as /api/doc — syntactic,
- *        post-path.resolve, post-fs.realpath — anchored on the scanned root.
+ *        target through the same three gates as /api/doc: syntactic,
+ *        post-path.resolve, post-fs.realpath: anchored on the project's own
+ *        watched folder (`anchorFor`).
  * ================================================================== */
 
 import * as agentslib from './lib/agents.js';
@@ -1048,7 +1162,7 @@ async function withAgents(payload) {
  *
  * Folded into the grid payload so the dashboard can show a project being
  * documented without the client having to hold a job subscription for every
- * card. Null when nothing is running — the common case, and cheap.
+ * card. Null when nothing is running: the common case, and cheap.
  */
 function forgeStateFor(projectId) {
   let job = null;
@@ -1189,14 +1303,14 @@ async function handleWorkbench(req, res, pathname, query) {
 
 
 /* ---- POST /api/agents/stop ----------------------------------------- *
- * CONTRACT-WORKBENCH.md §3 — the one place Ground Control signals a process.
+ * CONTRACT-WORKBENCH.md §3: the one place Ground Control signals a process.
  *
  * Everything else in the Workbench observes. This endpoint deliberately does
  * not, so it carries the guards that the "never signal" rule used to provide:
  *
  *   1. The pid must be one Ground Control itself currently attributes to the named
  *      project. A caller cannot nominate an arbitrary pid.
- *   2. The pid is re-verified immediately before the signal — still alive,
+ *   2. The pid is re-verified immediately before the signal: still alive,
  *      still a `claude` binary, still with its cwd inside that project. A pid
  *      recycled between the sweep and the click is the one way this could hit
  *      an unrelated process, and this closes it.
@@ -1219,7 +1333,7 @@ async function workbenchAgentStop(req, res) {
   const project = await findProject(id);
   if (!project) return sendError(res, 404, 'unknown project');
 
-  // Guard 1 — Ground Control must already believe this pid belongs to this project.
+  // Guard 1: Ground Control must already believe this pid belongs to this project.
   let map;
   try {
     map = await agentslib.agentActivity([project], {
@@ -1232,12 +1346,12 @@ async function workbenchAgentStop(req, res) {
   const known = activity && (activity.processes || []).find((p) => p.pid === pid);
   if (!known) {
     return sendJSON(res, 409, {
-      error: 'That process is not one of the agents Ground Control currently sees in this project. It may have already exited — refresh and try again.',
+      error: 'That process is not one of the agents Ground Control currently sees in this project. It may have already exited: refresh and try again.',
       pid,
     });
   }
 
-  // Guard 3 — never signal the session Ground Control is being operated from.
+  // Guard 3: never signal the session Ground Control is being operated from.
   if (known.isSelf) {
     return sendJSON(res, 409, {
       error: 'That is the Claude Code session Ground Control is running from. Stopping it would end the session asking for it, so Ground Control will not signal it.',
@@ -1246,7 +1360,7 @@ async function workbenchAgentStop(req, res) {
     });
   }
 
-  // Guard 2 — re-verify the pid right now, immediately before signalling.
+  // Guard 2: re-verify the pid right now, immediately before signalling.
   const ok = await agentslib.verifyAgentPid(pid, project.path);
   if (!ok.ok) {
     return sendJSON(res, 409, { error: ok.reason, pid });
@@ -1293,7 +1407,7 @@ async function workbenchEditors(res, query) {
 /* ---- POST /api/open ------------------------------------------------ */
 
 /**
- * Open a project — or one file inside it — in a local editor.
+ * Open a project (or one file inside it) in a local editor.
  *
  * 403 a path that escapes the project, 404 an unknown project/editor/file,
  * 409 an editor that is not available here.
@@ -1318,12 +1432,16 @@ async function workbenchOpen(req, res) {
   }
 
   /* Gate 1–3 on the project directory itself: it must resolve, and realpath,
-   * inside the scanned root. */
+   * inside the folder it was scanned from. For a project added on its own that
+   * folder is its parent, so the guard is the same shape either way, and a
+   * project belonging to no registered source cannot be opened at all. */
+  const anchor = anchorFor(project);
+  if (!anchor) return sendError(res, 403, 'forbidden path');
   let projectAbs;
   try {
-    const rel = path.relative(ROOT, project.path);
+    const rel = path.relative(anchor, project.path);
     if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) throw new PathError('forbidden path');
-    projectAbs = resolveInside(ROOT, rel.split(path.sep).join('/'));
+    projectAbs = resolveInside(anchor, rel.split(path.sep).join('/'));
   } catch {
     return sendError(res, 403, 'forbidden path');
   }
@@ -1349,7 +1467,7 @@ async function workbenchOpen(req, res) {
 
   let result;
   try {
-    result = await editorslib.openIn(editor.id, projectAbs, { root: ROOT, file: fileAbs, line });
+    result = await editorslib.openIn(editor.id, projectAbs, { root: anchor, file: fileAbs, line });
   } catch (err) {
     return sendError(res, 500, `the editor could not be launched: ${(err && err.message) || err}`);
   }
@@ -1399,28 +1517,28 @@ async function workbenchAgentDetail(res, id) {
 
 
 /* ================================================================== *
- * GROUND_CONTROL RECLAIM — flag and remove dead folders (CONTRACT-RECLAIM.md §5)
+ * GROUND_CONTROL RECLAIM: flag and remove dead folders (CONTRACT-RECLAIM.md §5)
  *
  * Appended below Workbench. Nothing above was restructured; `route()` gained
  * one dispatch block for `/api/reclaim`.
  *
  * This is the only destructive endpoint in Ground Control. Its posture:
  *
- *   §0 — Nothing is ever permanently deleted. `lib/reclaim.js` moves a folder
+ *   §0: Nothing is ever permanently deleted. `lib/reclaim.js` moves a folder
  *        to `~/.Trash` with `fs.rename`. There is no permanent-delete route,
  *        no query parameter that enables one, and no "empty trash".
- *   §3 — Blockers are hard refusals. The assessment is re-run inside
+ *   §3: Blockers are hard refusals. The assessment is re-run inside
  *        `trashProject()` at call time; a client-supplied assessment is never
  *        read, and any blocker returns 409 with the list.
- *   §4 — One project per request. There is deliberately no bulk endpoint.
- *   §5 — Both GET routes are pure reads: they scan and assess, and mutate
+ *   §4: One project per request. There is deliberately no bulk endpoint.
+ *   §5: Both GET routes are pure reads: they scan and assess, and mutate
  *        nothing on disk.
  * ================================================================== */
 
 import * as reclaimlib from './lib/reclaim.js';
 
 async function handleReclaim(req, res, pathname, query) {
-  /* GET /api/reclaim — every assessment, one agent sweep. */
+  /* GET /api/reclaim: every assessment, one agent sweep. */
   if (pathname === '/api/reclaim') {
     if (req.method !== 'GET' && req.method !== 'HEAD') return sendError(res, 405, 'method not allowed');
     return reclaimAll(res, query);
@@ -1450,8 +1568,8 @@ async function handleReclaim(req, res, pathname, query) {
 }
 
 /**
- * A project id is a slug. Anything that decodes into a path — a separator, a
- * `..` segment, a NUL — is refused outright rather than handed to a lookup,
+ * A project id is a slug. Anything that decodes into a path: a separator, a
+ * `..` segment, a NUL: is refused outright rather than handed to a lookup,
  * so `/api/reclaim/..%2F..%2Fetc/trash` never even reaches the scan.
  */
 function reclaimIdIsPlain(id) {
@@ -1467,13 +1585,14 @@ async function reclaimAll(res, query) {
   const payload = await getScan(query && query.get('fresh') === '1');
   let result;
   try {
-    result = await reclaimlib.assessAll(payload.projects, { root: ROOT });
+    result = await reclaimlib.assessAll(payload.projects, { rootFor: anchorFor });
   } catch (err) {
     console.error('[reclaim] assessment failed:', (err && err.stack) || err);
     return sendError(res, 500, 'the reclaim assessment could not be run');
   }
   return sendJSON(res, 200, {
-    root: ROOT,
+    root: primaryRoot(),
+    sources: SOURCES.describeAll(),
     assessments: result.assessments,
     scannedAt: result.scannedAt,
   });
@@ -1486,7 +1605,7 @@ async function reclaimOne(res, id) {
   if (!project) return sendError(res, 404, 'unknown project');
   let assessment;
   try {
-    assessment = await reclaimlib.assessProject(project, { root: ROOT });
+    assessment = await reclaimlib.assessProject(project, { root: anchorFor(project) });
   } catch (err) {
     console.error('[reclaim] assessment failed:', (err && err.stack) || err);
     return sendError(res, 500, 'the reclaim assessment could not be run');
@@ -1512,22 +1631,25 @@ async function reclaimTrash(req, res, id) {
   if (!project) return sendError(res, 404, 'unknown project');
 
   /* The three path gates, before anything else is even discussed: the target
-   * must be a plain directory sitting directly in the scanned root — not the
-   * root, not nested, not a symlink, not Ground Control. `trashProject()` runs the
+   * must be a plain directory sitting directly in the folder it was scanned
+   * from, not that folder itself, not nested, not a symlink, not Ground
+   * Control. `trashProject()` runs the
    * identical check again; this one is here so the refusal is a 403 that names
    * the reason, rather than being folded into the blocker list. */
-  const gate = reclaimlib.checkDirectChild(ROOT, project);
-  if (!gate.ok) return sendError(res, 403, `forbidden path — ${gate.reason}`);
+  const anchor = anchorFor(project);
+  if (!anchor) return sendError(res, 403, 'forbidden path: this project belongs to no folder Ground Control watches');
+  const gate = reclaimlib.checkDirectChild(anchor, project);
+  if (!gate.ok) return sendError(res, 403, `forbidden path: ${gate.reason}`);
 
   const confirmName = typeof body.confirmName === 'string' ? body.confirmName : null;
   // Explicit override of the soft (judgement) blockers, so a folder that was
   // never flagged for reclamation can still be trashed by its owner. Hard
-  // blockers ignore this entirely — see HARD_BLOCKERS in lib/reclaim.js.
+  // blockers ignore this entirely: see HARD_BLOCKERS in lib/reclaim.js.
   const force = body.force === true;
 
   let result;
   try {
-    result = await reclaimlib.trashProject(project, { confirmName, root: ROOT, force });
+    result = await reclaimlib.trashProject(project, { confirmName, root: anchor, force });
   } catch (err) {
     const status = Number(err && err.status) || 500;
     if (status === 409) {
@@ -1545,7 +1667,15 @@ async function reclaimTrash(req, res, id) {
     return sendError(res, status, (err && err.message) || 'the folder could not be moved to the Trash');
   }
 
-  // The project is gone from the root — make every other view agree.
+  /* A project that WAS a source is now a source pointing at nothing. Drop the
+   * registry entry too, so the dashboard does not keep a dead folder in its
+   * list and offer to re-scan it forever. */
+  if (project.sourceKind === 'project' && project.sourceId) {
+    try { SOURCES.remove(project.sourceId); sourcesChanged(); }
+    catch { /* already gone, or never a source: nothing to clean up */ }
+  }
+
+  // The project is gone from the root: make every other view agree.
   getScan(true).catch(() => {});
 
   return sendJSON(res, 200, {
@@ -1553,5 +1683,337 @@ async function reclaimTrash(req, res, id) {
     trashedTo: result.trashedTo,
     manifest: result.manifest,
     restoreHint: 'Open the Trash and drag it back out to restore it.',
+  });
+}
+
+
+/* ================================================================== *
+ * GROUND_CONTROL SOURCES: watch any folder, anywhere (CONTRACT-SOURCES.md §3)
+ *
+ * Appended below Reclaim. Nothing above was restructured beyond replacing the
+ * single global ROOT with the registry: `route()` gained one dispatch block,
+ * the scan reads `SOURCES.all()`, and every path guard now anchors on the
+ * folder a project was actually scanned from (`anchorFor`).
+ *
+ * Safety posture:
+ *   §0: this API never writes into a watched folder and never deletes
+ *        anything. Adding and removing a source edits one JSON file in
+ *        `~/.ground-control/`; the folders themselves are untouched. Removing a
+ *        source takes it off the dashboard, full stop.
+ *   §1: a folder is inspected before it is accepted. System directories and
+ *        the bare home directory are refused with a sentence that says why,
+ *        rather than being accepted and then quietly walking 200k files.
+ *   §2: the picker is read-only: `/api/browse` lists directory names, never
+ *        file contents, and refuses to leave the filesystem it was given.
+ * ================================================================== */
+
+/**
+ * These routes are loopback-only, and deliberately so.
+ *
+ * `server.listen(port)` binds every interface, so the dashboard is reachable
+ * from the rest of the network. Reading a project someone chose to watch is
+ * one thing; *choosing what gets watched* is another, because a source is a
+ * grant of read access: point Ground Control at `~/Documents` and every file
+ * under it becomes readable through /api/doc. Enumerating directories anywhere
+ * on the disk (/api/browse) and popping a chooser on the user's screen
+ * (/api/pick-folder) are the same class of thing.
+ *
+ * So: anyone can look at the dashboard, only this machine can change what it
+ * looks at. Reading `/api/sources` stays open, since the header needs it.
+ */
+function isLocalRequest(req) {
+  const addr = (req.socket && req.socket.remoteAddress) || '';
+  if (!addr) return false;
+  // ::ffff:127.0.0.1 is how a v4 loopback arrives on a dual-stack socket.
+  const bare = addr.startsWith('::ffff:') ? addr.slice(7) : addr;
+  return bare === '127.0.0.1' || bare === '::1' || bare === 'localhost'
+    || bare.startsWith('127.');
+}
+
+const LOCAL_ONLY_MESSAGE =
+  'Folders can only be added or removed from the machine Ground Control is running on.';
+
+/** A source id is a slug. Anything that decodes into a path is refused. */
+function sourceIdIsPlain(id) {
+  if (typeof id !== 'string' || !id || id.length > 200) return false;
+  if (id.includes('/') || id.includes('\\') || id.includes('\0')) return false;
+  return id !== '.' && id !== '..';
+}
+
+function sourcesPayload(extra) {
+  return Object.assign({
+    sources: SOURCES.describeAll(),
+    defaultRoot: DEFAULT_ROOT,
+    homeDir: os.homedir(),
+    configPath: SOURCES.file,
+    configError: SOURCES.loadError || SOURCES.saveError || null,
+    canPickFolder: process.platform === 'darwin',
+  }, extra || {});
+}
+
+/** Turn a SourceError into its status + sentence; anything else is a 500. */
+function sendSourceError(res, err) {
+  const status = Number(err && err.status) || 500;
+  if (status >= 500) console.error('[sources]', (err && err.stack) || err);
+  const body = { error: (err && err.message) || 'the folder could not be added' };
+  if (err && err.source) body.source = err.source;
+  return sendJSON(res, status, body);
+}
+
+async function handleSources(req, res, pathname, query) {
+  /* Everything here except reading the list back is loopback-only. */
+  const readOnlyList = pathname === '/api/sources' && (req.method === 'GET' || req.method === 'HEAD');
+  if (!readOnlyList && !isLocalRequest(req)) {
+    return sendError(res, 403, LOCAL_ONLY_MESSAGE);
+  }
+
+  if (pathname === '/api/browse') {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return sendError(res, 405, 'method not allowed');
+    return sourcesBrowse(res, query);
+  }
+
+  if (pathname === '/api/pick-folder') {
+    if (req.method !== 'POST') return sendError(res, 405, 'method not allowed');
+    return sourcesPick(res);
+  }
+
+  if (pathname === '/api/sources') {
+    if (req.method === 'GET' || req.method === 'HEAD') return sendJSON(res, 200, sourcesPayload());
+    if (req.method === 'POST') return sourcesAdd(req, res);
+    return sendError(res, 405, 'method not allowed');
+  }
+
+  const rest = pathname.slice('/api/sources/'.length);
+  if (!rest) return sendError(res, 404, 'unknown endpoint');
+
+  if (rest === 'inspect') {
+    if (req.method === 'GET' || req.method === 'HEAD') return sourcesInspect(res, query.get('path'), query.get('kind'));
+    if (req.method === 'POST') {
+      let body;
+      try { body = await readJsonBody(req); }
+      catch (err) { return sendError(res, err.status || 400, err.message || 'bad request'); }
+      return sourcesInspect(res, body.path, body.kind);
+    }
+    return sendError(res, 405, 'method not allowed');
+  }
+
+  if (rest === 'locate') {
+    if (req.method !== 'POST') return sendError(res, 405, 'method not allowed');
+    return sourcesLocate(req, res);
+  }
+
+  if (rest === 'reorder') {
+    if (req.method !== 'POST') return sendError(res, 405, 'method not allowed');
+    return sourcesReorder(req, res);
+  }
+
+  /* POST /api/sources/:id/remove: the same thing as DELETE, for clients that
+   * would rather not send one. */
+  if (rest.endsWith('/remove')) {
+    const id = safeDecode(rest.slice(0, -'/remove'.length));
+    if (id === null) return sendError(res, 400, 'bad request');
+    if (req.method !== 'POST' && req.method !== 'DELETE') return sendError(res, 405, 'method not allowed');
+    return sourcesRemove(res, id);
+  }
+
+  if (rest.indexOf('/') !== -1) return sendError(res, 404, 'unknown endpoint');
+
+  const id = safeDecode(rest);
+  if (id === null) return sendError(res, 400, 'bad request');
+  if (req.method === 'DELETE') return sourcesRemove(res, id);
+  if (req.method === 'POST' || req.method === 'PATCH') return sourcesUpdate(req, res, id);
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    if (!sourceIdIsPlain(id)) return sendError(res, 404, 'unknown folder');
+    const s = SOURCES.byId(id);
+    if (!s) return sendError(res, 404, 'unknown folder');
+    return sendJSON(res, 200, { source: SOURCES.describe(s) });
+  }
+  return sendError(res, 405, 'method not allowed');
+}
+
+/* ---- GET /api/sources/inspect --------------------------------------- */
+
+/**
+ * What Ground Control makes of a folder, before anything is committed to. Pure read:
+ * one stat and one directory listing.
+ */
+function sourcesInspect(res, target, kind) {
+  if (typeof target !== 'string' || !target.trim()) {
+    return sendError(res, 400, 'path is required');
+  }
+  const info = sourceslib.inspect(target, { kind: kind || undefined });
+  const already = info.path ? SOURCES.all().find((s) => s.path === info.path) : null;
+  return sendJSON(res, 200, Object.assign({}, info, {
+    alreadyWatched: Boolean(already),
+    watchedAs: already ? SOURCES.describe(already) : null,
+  }));
+}
+
+/* ---- POST /api/sources ---------------------------------------------- */
+
+async function sourcesAdd(req, res) {
+  let body;
+  try { body = await readJsonBody(req); }
+  catch (err) { return sendError(res, err.status || 400, err.message || 'bad request'); }
+
+  const target = typeof body.path === 'string' ? body.path : '';
+  if (!target.trim()) return sendError(res, 400, 'path is required');
+  if (body.kind !== undefined && body.kind !== 'root' && body.kind !== 'project') {
+    return sendError(res, 400, 'kind must be "root" or "project"');
+  }
+
+  let added;
+  try {
+    added = SOURCES.add(target, { kind: body.kind, label: body.label });
+  } catch (err) {
+    return sendSourceError(res, err);
+  }
+
+  sourcesChanged();
+  // Scan straight away so the response can say how many projects appeared.
+  let projects = null;
+  try {
+    const payload = await getScan(true);
+    projects = payload.projects.filter((p) => p.sourceId === added.source.id).length;
+  } catch { /* the scan will catch up on its own */ }
+
+  return sendJSON(res, 201, sourcesPayload({
+    ok: true,
+    source: SOURCES.describe(SOURCES.byId(added.source.id) || added.source),
+    projectsAdded: projects,
+    saved: !SOURCES.saveError,
+  }));
+}
+
+/* ---- DELETE /api/sources/:id ---------------------------------------- *
+ *
+ * Takes the folder off the dashboard. It does not touch the folder, and there
+ * is deliberately no route here that does: removing files is Reclaim's job,
+ * behind its own typed-name confirmation.
+ */
+function sourcesRemove(res, id) {
+  if (!sourceIdIsPlain(id)) return sendError(res, 404, 'unknown folder');
+  let gone;
+  try { gone = SOURCES.remove(id); }
+  catch (err) { return sendSourceError(res, err); }
+
+  sourcesChanged();
+  getScan(true).catch(() => {});
+  return sendJSON(res, 200, sourcesPayload({ ok: true, removed: gone }));
+}
+
+/* ---- POST /api/sources/:id ------------------------------------------ */
+
+async function sourcesUpdate(req, res, id) {
+  if (!sourceIdIsPlain(id)) return sendError(res, 404, 'unknown folder');
+  let body;
+  try { body = await readJsonBody(req); }
+  catch (err) { return sendError(res, err.status || 400, err.message || 'bad request'); }
+
+  let updated;
+  try { updated = SOURCES.update(id, { label: body.label, kind: body.kind }); }
+  catch (err) { return sendSourceError(res, err); }
+
+  sourcesChanged();
+  getScan(true).catch(() => {});
+  return sendJSON(res, 200, sourcesPayload({ ok: true, source: updated }));
+}
+
+/* ---- POST /api/sources/reorder -------------------------------------- */
+
+async function sourcesReorder(req, res) {
+  let body;
+  try { body = await readJsonBody(req); }
+  catch (err) { return sendError(res, err.status || 400, err.message || 'bad request'); }
+
+  try { SOURCES.reorder(body.ids); }
+  catch (err) { return sendSourceError(res, err); }
+
+  sourcesChanged();
+  getScan(true).catch(() => {});
+  return sendJSON(res, 200, sourcesPayload({ ok: true }));
+}
+
+/* ---- POST /api/sources/locate --------------------------------------- *
+ *
+ * The drag-and-drop fallback. A browser hands a dropped folder over as a name
+ * with no path attached, so rather than refusing the drop, look the name up:
+ * the folders already watched first, then a bounded sweep of the home
+ * directory. Every hit is offered to the user for confirmation: nothing is
+ * added on the strength of a guess.
+ */
+async function sourcesLocate(req, res) {
+  let body;
+  try { body = await readJsonBody(req); }
+  catch (err) { return sendError(res, err.status || 400, err.message || 'bad request'); }
+
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  if (!name) return sendError(res, 400, 'name is required');
+  if (name.length > 255 || name.includes('/') || name.includes('\0')) {
+    return sendError(res, 400, 'that is not a folder name');
+  }
+
+  const searchFirst = [];
+  for (const s of SOURCES.all()) {
+    if (s.kind === 'root') searchFirst.push(s.path);
+    else searchFirst.push(path.dirname(s.path));
+  }
+  searchFirst.push(DEFAULT_ROOT, os.homedir());
+
+  let matches = [];
+  try { matches = sourceslib.locateByName(name, { searchFirst }); }
+  catch (err) { console.error('[sources] locate failed:', (err && err.message) || err); }
+
+  const watched = new Set(SOURCES.all().map((s) => s.path));
+  return sendJSON(res, 200, {
+    name,
+    matches: matches.map((abs) => Object.assign(
+      sourceslib.inspect(abs),
+      { alreadyWatched: watched.has(abs) },
+    )),
+  });
+}
+
+/* ---- GET /api/browse?path= ------------------------------------------ *
+ *
+ * The in-app folder picker: subdirectory names only. It reads no file
+ * contents, follows no symlink it was not pointed at, and is the only way to
+ * see outside a watched folder, which is the point, since choosing a new one
+ * means looking somewhere Ground Control is not watching yet.
+ */
+function sourcesBrowse(res, query) {
+  const target = query.get('path');
+  let result;
+  try { result = sourceslib.browse(target || os.homedir()); }
+  catch (err) {
+    console.error('[sources] browse failed:', (err && err.message) || err);
+    return sendError(res, 500, 'that folder could not be listed');
+  }
+  if (!result.ok) return sendJSON(res, 404, result);
+  const watched = new Set(SOURCES.all().map((s) => s.path));
+  for (const e of result.entries) e.watched = watched.has(e.path);
+  result.watched = watched.has(result.path);
+  return sendJSON(res, 200, result);
+}
+
+/* ---- POST /api/pick-folder ------------------------------------------ *
+ *
+ * The real system folder chooser, through osascript. Ground Control runs on the
+ * user's own machine, so the native picker is available and is far less
+ * annoying than typing a path. Cancelling is a normal outcome, not an error.
+ */
+async function sourcesPick(res) {
+  let picked;
+  try { picked = await sourceslib.pickFolder(); }
+  catch (err) {
+    console.error('[sources] folder picker failed:', (err && err.message) || err);
+    return sendError(res, 500, 'the folder picker could not be opened');
+  }
+  if (picked.cancelled) return sendJSON(res, 200, { ok: false, cancelled: true });
+  if (!picked.ok) return sendJSON(res, picked.unsupported ? 501 : 500, picked);
+  return sendJSON(res, 200, {
+    ok: true,
+    path: picked.path,
+    inspect: sourceslib.inspect(picked.path),
   });
 }

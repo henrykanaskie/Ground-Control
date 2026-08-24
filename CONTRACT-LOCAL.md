@@ -1,8 +1,8 @@
-# Ground Control — the local-model tier
+# Ground Control: the local-model tier
 
 A third Forge tier that writes the onboarding artifact using a **local model via
 ollama**, so generation works offline and without touching the user's Claude
-subscription. Read `CONTRACT-FORGE.md` first — this extends it and reuses its
+subscription. Read `CONTRACT-FORGE.md` first, this extends it and reuses its
 brief, staging, and save machinery unchanged.
 
 ---
@@ -15,7 +15,7 @@ given a real project two ways:
 | Asked for | Result |
 |---|---|
 | JSON prose fields, schema-constrained | Accurate. Caught that `pandas`/`matplotlib` were declared but unused, flagged a hardcoded key, put three real gaps in `unknowns`. |
-| The whole HTML artifact, free-form | Structurally valid but **invented behaviour** — claimed a 7-line script that does `urlopen` + `pprint` was "cleaning it and preparing it for statistical regression modeling". Emoji headings, no reading measure. |
+| The whole HTML artifact, free-form | Structurally valid but **invented behaviour**: claimed a 7-line script that does `urlopen` + `pprint` was "cleaning it and preparing it for statistical regression modeling". Emoji headings, no reading measure. |
 
 Same model, same input. Constrained mode told the truth; free-form embellished.
 
@@ -32,22 +32,22 @@ slots; `lib/artifact-template.js` renders the page exactly as it does for the
 
 A second measured finding shaped this: both models did well on `groupStat`
 (12.8 KB brief) and poorly on `pitwall` (3 KB brief). **Brief quality dominates
-model size** — so spend effort on grounding, not on a bigger model.
+model size**, so spend effort on grounding, not on a bigger model.
 
 ---
 
 ## 1. File ownership
 
-- `lib/local.js` (new) — ollama client, slot filling, verification
-- `lib/generate.js` — add the `local` tier alongside `template` / `authored`
-- `lib/artifact-template.js` — accept authored prose and render it
-- `server.js` — extend `/api/forge/status` and accept `tier: "local"`
-- `public/js/app.js`, `public/css/app.css` — the tier option and its status
+- `lib/local.js` (new): ollama client, slot filling, verification
+- `lib/generate.js`: add the `local` tier alongside `template` / `authored`
+- `lib/artifact-template.js`: accept authored prose and render it
+- `server.js`: extend `/api/forge/status` and accept `tier: "local"`
+- `public/js/app.js`, `public/css/app.css`: the tier option and its status
 
 Do not touch `lib/scan.js`, `lib/git.js`, `lib/docs.js`, `lib/util.js`,
 `lib/brief.js`, `lib/jobs.js`, `lib/agents.js`, `lib/editors.js`,
 `lib/reclaim.js`, `public/js/markdown.js`, `public/css/doc.css`, `README.md`, or
-any other CONTRACT file. A `test/` directory is being written in parallel — do
+any other CONTRACT file. A `test/` directory is being written in parallel: do
 not create or edit anything under `test/`.
 
 ---
@@ -62,7 +62,7 @@ export async function generateLocal({brief, model, audience, signal, onProgress}
 - Talk to `http://127.0.0.1:11434` with `fetch`. No new dependency.
 - `ollamaStatus()` calls `/api/tags`, is cached ~30 s, and returns
   `available:false` rather than throwing when nothing is listening.
-- **Default model**: prefer `gemma4:latest` if present — it beat
+- **Default model**: prefer `gemma4:latest` if present, it beat
   `qwen2.5-coder:14b` on this exact task (better prose, 2.5× faster; the coder
   model leaked raw brief metadata such as ISO timestamps and byte counts into
   sentences). Otherwise the first non-embedding model.
@@ -84,7 +84,7 @@ export async function generateLocal({brief, model, audience, signal, onProgress}
   "start_here":    string }  // picking it up again
 ```
 
-## 3. Verification — the part that makes it trustworthy
+## 3. Verification: the part that makes it trustworthy
 
 Before any prose is rendered, run it through a deterministic check:
 
@@ -92,14 +92,14 @@ Before any prose is rendered, run it through a deterministic check:
 - Any path that does not appear in the brief **and** does not exist on disk in
   the project is **unverifiable**. Same for any command not present in the
   brief's evidenced-commands list.
-- Do not silently delete them. Return a `verification` record —
-  `{mentioned, unverifiable:[...], strippedSentences:[...]}` — and **drop the
+- Do not silently delete them. Return a `verification` record
+  (`{mentioned, unverifiable:[...], strippedSentences:[...]}`) and **drop the
   sentence containing an unverifiable path**, because a confident wrong path is
   worse than a shorter paragraph.
 - Empty or near-empty model output for a field is fine; render the section as
   absent rather than padding it.
 
-## 4. Provenance — say who wrote it
+## 4. Provenance: say who wrote it
 
 The artifact must state plainly, near the top, that its prose was written by a
 local model and name it, e.g. *"Prose drafted locally by gemma4:8b; every path,
@@ -113,7 +113,7 @@ as if a person or a frontier model wrote it.
 - `/api/forge/status` gains `ollama: {available, models, defaultModel}` and
   `local` in `tiers` **only when ollama is reachable**.
 - `POST /api/forge/generate` accepts `tier:"local"` plus an optional `model`.
-  Reject with a clear message when ollama is unreachable — never hang.
+  Reject with a clear message when ollama is unreachable, never hang.
 - The local tier must **never** invoke the `claude` CLI, and must not require
   network access.
 - The UI shows the tier with its model picker (populated from `ollamaStatus`),
@@ -135,7 +135,7 @@ Ollama is installed and running on this machine with `gemma4:latest` and
    exist and confirm the sentence is dropped and recorded.
 5. Confirm the rendered artifact is valid self-contained HTML, states its
    provenance, and that every command and path in it traces to the brief.
-6. Confirm graceful failure with ollama stopped — a clear message, no hang.
+6. Confirm graceful failure with ollama stopped: a clear message, no hang.
    (Stop it with `pkill ollama` only if you restart it afterwards; prefer
    pointing the client at a dead port instead, which is safer.)
 7. Leave no stray processes.

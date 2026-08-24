@@ -79,14 +79,14 @@ test('a live process alone does not mean an agent is working', async () => {
   // Regression 2: transcript RECENCY was not the signal either. A session that
   // finished replying thirty seconds ago has a fresh mtime and is doing
   // nothing, so a recency window still lit the indicator over an idle prompt.
-  // The signal is the transcript's TURN STATE — a trailing `tool` or `user`
+  // The signal is the transcript's TURN STATE: a trailing `tool` or `user`
   // event means mid-turn, a trailing `assistant` text event means the turn
   // ended and it is waiting for input.
   const src = await import('node:fs').then((fs) =>
     fs.readFileSync(new URL('../lib/agents.js', import.meta.url), 'utf8'));
 
   assert.match(src, /function turnStateOf/,
-    'turn-state detection must exist — mtime alone cannot tell working from idle');
+    'turn-state detection must exist: mtime alone cannot tell working from idle');
   assert.match(src, /STALL_WINDOW_MS/,
     'a mid-turn session must stop counting as working once it has stalled');
   assert.match(src, /a\.active = Math\.min\(a\.live, workingCount\)/,
@@ -99,7 +99,7 @@ test('a live process alone does not mean an agent is working', async () => {
 test('the agent poller notices a state change, not just a process count', async () => {
   // Regression: the SSE poller diffed a fingerprint built from `live` alone.
   // When a session finishes its turn the process is still alive, so `live`
-  // stays 1 and only `state` and `active` move — the poller concluded nothing
+  // stays 1 and only `state` and `active` move: the poller concluded nothing
   // had changed and never pushed a payload. The indicator could turn on (via
   // an unrelated filesystem rescan) but could not turn OFF.
   const fs = await import('node:fs');

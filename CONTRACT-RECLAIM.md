@@ -1,7 +1,7 @@
-# Ground Control Reclaim — Flag and Remove Dead Folders
+# Ground Control Reclaim - Flag and Remove Dead Folders
 
-Find folders that are genuinely dead — never really started, or long abandoned
-with nothing of value in them — and make them safe to get rid of.
+Find folders that are genuinely dead (never really started, or long abandoned
+with nothing of value in them) and make them safe to get rid of.
 
 This is the only destructive feature in Ground Control. Read `CONTRACT.md` first (all its
 hard rules apply). `CONTRACT-FORGE.md` and `CONTRACT-WORKBENCH.md` cover separate
@@ -20,24 +20,24 @@ still no.
 
 Verified on this machine: moving a directory to `~/.Trash` with `fs.rename` is
 instant and needs no permissions prompt. **Do not use `osascript`/Finder
-automation** — it triggers a macOS TCC prompt that hangs a headless server
+automation**: it triggers a macOS TCC prompt that hangs a headless server
 indefinitely (this was tested; it deadlocked until killed).
 
 ---
 
 ## 1. File ownership
 
-- `lib/reclaim.js` (new) — candidate scoring, safety checks, trash operation
-- `server.js`, `public/js/app.js`, `public/css/app.css`, `public/index.html` —
+- `lib/reclaim.js` (new): candidate scoring, safety checks, trash operation
+- `server.js`, `public/js/app.js`, `public/css/app.css`, `public/index.html`:
   append a clearly-marked Reclaim section; **never restructure existing code**
 
 Do not touch any other `lib/` file, `public/js/markdown.js`, `public/css/doc.css`,
 `README.md`, or any CONTRACT file. Forge and Workbench already occupy parts of
-`server.js` and `app.js` — leave every line of both alone.
+`server.js` and `app.js`: leave every line of both alone.
 
 ---
 
-## 2. Measuring "not much content" — do not be fooled
+## 2. Measuring "not much content" - do not be fooled
 
 Raw file counts and directory sizes are **actively misleading** here. Measured on
 this machine:
@@ -57,7 +57,7 @@ output, caches, dot-directories). Never call `du`/`find` yourself for this.
 
 ---
 
-## 3. Safety checks — `lib/reclaim.js`
+## 3. Safety checks - `lib/reclaim.js`
 
 ```js
 export async function assessProject(project) -> Assessment
@@ -80,7 +80,7 @@ export async function trashProject(project, opts) -> {ok, trashedTo, manifest}
 }
 ```
 
-### Blockers — HARD ones make removal impossible; SOFT ones require an override
+### Blockers - HARD ones make removal impossible; SOFT ones require an override
 
 Blockers divide in two, because they answer different questions.
 
@@ -90,10 +90,10 @@ no UI offers to lift them:
 | code | why it is absolute |
 |---|---|
 | `is-ground-control` | removing the running application's own folder |
-| `not-a-direct-child` | path gate — the target is not a plain child of the scanned root |
+| `not-a-direct-child` | path gate: the target is not a plain child of the folder it was scanned from |
 | `inside-other-repo` | the folder belongs to a repository that is not itself |
 
-**Every other blocker is a judgement** about whether the work matters —
+**Every other blocker is a judgement** about whether the work matters:
 `recent-activity`, `substantial-content`, `uncommitted-changes`,
 `unpushed-commits`, `no-remote`, `stashed-work`, `unmerged-branches`,
 `agent-running`, `git-unreadable`, `agent-unknown`. These are the owner's calls
@@ -101,7 +101,7 @@ to overrule. They are lifted only by `force: true` on the trash request, which
 the UI reaches through a second, separately typed confirmation naming each
 reason being overridden.
 
-This exists because the original rule — any blocker makes removal impossible —
+This exists because the original rule (any blocker makes removal impossible)
 meant a perfectly ordinary folder could never be trashed from Ground Control at all,
 only ones the sweep had already judged dead. That is a strange thing for a tool
 that manages a folder of projects to refuse.
@@ -120,26 +120,26 @@ with `409` and the UI must not offer the action at all:
 |---|---|
 | `uncommitted-changes` | git working tree is dirty |
 | `unpushed-commits` | commits exist that are on no remote |
-| `no-remote` | repo has commits but no remote at all — this folder is the only copy |
+| `no-remote` | repo has commits but no remote at all: this folder is the only copy |
 | `stashed-work` | `git stash list` is non-empty |
 | `unmerged-branches` | a local branch not merged into the default branch |
 | `substantial-content` | `meaningfulFiles > 40` or `meaningfulBytes > 20 MB` |
 | `recent-activity` | any activity within the last 30 days |
-| `is-ground-control` | the project is Ground Control itself — never removable |
+| `is-ground-control` | the project is Ground Control itself: never removable |
 | `agent-running` | a coding agent currently has this project as its cwd (see `lib/agents.js` when present; treat as a blocker if unavailable-but-detectable) |
 
 **`pitwall` is the live proof this matters**: dormant 5 months, 334 MB, and it
 has 1 unpushed commit and 5 dirty files. It must be blocked. Verify that it is.
 
 ### Scoring (only meaningful when `blockers` is empty)
-- `dead` — zero or near-zero meaningful files, or never any git history and
+- `dead`: zero or near-zero meaningful files, or never any git history and
   untouched for 180+ days.
-- `dormant` — small, no unique value at risk, untouched for 90+ days.
-- `keep` — everything else. **Default to `keep`.** A false "dead" is far worse
+- `dormant`: small, no unique value at risk, untouched for 90+ days.
+- `keep`: everything else. **Default to `keep`.** A false "dead" is far worse
   than a missed one.
 
 `reasons` must be specific and human ("no files at all"; "1 file, last touched
-7 months ago"; "all 6 commits are pushed to origin") — never a bare score.
+7 months ago"; "all 6 commits are pushed to origin"), never a bare score.
 
 ---
 
@@ -154,19 +154,19 @@ trashProject(project, { confirmName })
 2. Require `confirmName === project.name`, exact match. Mismatch → `400`.
 3. Validate the target through the three gates (syntactic, post-`path.resolve`,
    post-`fs.realpath`), and require it to be a **direct child of the scanned
-   root** — never the root itself, never a nested path, never a symlink.
+   root**, never the root itself, never a nested path, never a symlink.
 4. Write a manifest **before** moving: project name, absolute path, timestamp,
    file/byte counts, git state, and the assessment reasons. Append it to
    `<ground-control>/.forge/reclaim-log.jsonl` so there is a durable record of what was
    removed and why.
 5. Move with `fs.rename` to `~/.Trash/<name>`, de-duplicating with
    `<name> 2`, `<name> 3`… on collision. On `EXDEV` (different volume), fall
-   back to a recursive copy followed by removal of the original — and if the copy
+   back to a recursive copy followed by removal of the original, and if the copy
    fails at any point, leave the original untouched and report failure.
 6. Return the trash destination so the UI can tell the user exactly where it went.
 
 **Never** delete anything from `~/.Trash`. **Never** offer "empty trash".
-**Never** operate on more than one project per request — no bulk delete.
+**Never** operate on more than one project per request: no bulk delete.
 
 ---
 
@@ -176,7 +176,7 @@ trashProject(project, { confirmName })
 |---|---|
 | `GET /api/reclaim` | Assessments for every project: `{ assessments: {<id>: Assessment}, scannedAt }` |
 | `GET /api/reclaim/:id` | One `Assessment`; `404` unknown project |
-| `POST /api/reclaim/:id/trash` | Body `{ confirmName, force? }`. Moves to Trash. `409` with `{ blockers, hardBlockers, softBlockers, overridable }` — `overridable: true` means only soft blockers stand and `force: true` will lift them; `overridable: false` means a hard blocker stands and no flag helps. `400` on name mismatch, `403` on a path that fails the gates. Returns `{ ok, trashedTo, manifest }` and triggers a rescan. |
+| `POST /api/reclaim/:id/trash` | Body `{ confirmName, force? }`. Moves to Trash. `409` with `{ blockers, hardBlockers, softBlockers, overridable }`: `overridable: true` means only soft blockers stand and `force: true` will lift them; `overridable: false` means a hard blocker stands and no flag helps. `400` on name mismatch, `403` on a path that fails the gates. Returns `{ ok, trashedTo, manifest }` and triggers a rescan. |
 
 `GET` routes are read-only and must never mutate. There is no bulk endpoint.
 
@@ -185,7 +185,7 @@ trashProject(project, { confirmName })
 ## 6. UI
 
 - **Grid**: a quiet "Review" affordance surfaces the count of `dead`/`dormant`
-  candidates. Do not decorate individual cards with delete controls — this must
+  candidates. Do not decorate individual cards with delete controls: this must
   never be a one-click-from-anywhere action.
 - **A Reclaim view** listing candidates worst-first, each showing meaningful
   file count and size, age, the specific `reasons`, and its git state. Projects
@@ -196,7 +196,7 @@ trashProject(project, { confirmName })
      the git state in plain words.
   2. A required text field: the user types the project name exactly. The confirm
      button stays disabled until it matches.
-  3. Confirm is worded "Move to Trash" — never "Delete". It is styled as a
+  3. Confirm is worded "Move to Trash", never "Delete". It is styled as a
      destructive action, and is never the default focus; Cancel is.
   4. After success: confirm what moved and where, state plainly that it can be
      restored from Trash, and refresh the grid.

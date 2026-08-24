@@ -1,5 +1,5 @@
 //
-//  GroundControl.swift — the macOS shell around the Ground Control dashboard.
+//  GroundControl.swift: the macOS shell around the Ground Control dashboard.
 //
 //  The web application in `public/` and the Node server in `server.js` are
 //  finished and untouched. This file is only a host: it finds Node, claims a
@@ -8,7 +8,7 @@
 //  real menu bar.
 //
 //  The one thing that must never go wrong is the child's lifetime. Everything
-//  in `ServerProcess` exists to guarantee that no `node` outlives this app —
+//  in `ServerProcess` exists to guarantee that no `node` outlives this app,
 //  including when the app is force-quit and no Swift code of ours ever runs
 //  again. See the comment above `spawnScript`.
 //
@@ -57,7 +57,7 @@ enum Payload {
            FileManager.default.fileExists(atPath: res.appendingPathComponent("server.js").path) {
             return res.standardizedFileURL
         }
-        // Development: <repo>/build/GroundControl or <repo>/app — walk up looking for server.js.
+        // Development: <repo>/build/GroundControl or <repo>/app: walk up looking for server.js.
         var dir = Bundle.main.bundleURL.deletingLastPathComponent()
         for _ in 0..<5 {
             if FileManager.default.fileExists(atPath: dir.appendingPathComponent("server.js").path) {
@@ -114,7 +114,7 @@ enum Payload {
 enum NodeFinder {
 
     /// Probed in order. A GUI process launched from Finder gets a bare
-    /// `/usr/bin:/bin:/usr/sbin:/sbin` PATH, so `which node` is useless here —
+    /// `/usr/bin:/bin:/usr/sbin:/sbin` PATH, so `which node` is useless here,
     /// explicit paths first, the user's login shell only as a fallback.
     static func find() -> String? {
         for path in candidates() where isRunnable(path) { return path }
@@ -156,7 +156,7 @@ enum NodeFinder {
     }
 
     /// Last resort: ask the login shell, which has the user's real PATH.
-    /// Bounded — a misconfigured shell profile must not hang the launch.
+    /// Bounded: a misconfigured shell profile must not hang the launch.
     private static func viaLoginShell() -> String? {
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         guard FileManager.default.isExecutableFile(atPath: shell) else { return nil }
@@ -195,7 +195,7 @@ enum NodeFinder {
 enum FreePort {
     /// Bind port 0, read back what the kernel assigned, release it. There is a
     /// theoretical race between releasing and the server binding, but the
-    /// alternative — hardcoding 7377 — collides with the user's own instance
+    /// alternative (hardcoding 7377) collides with the user's own instance
     /// every time, which is not theoretical at all.
     ///
     /// We probe on 0.0.0.0 because that is what `server.listen(port)` does.
@@ -240,8 +240,8 @@ enum FreePort {
 ///  1. **Nothing survives the app.** File descriptor 3 is the read end of a
 ///     pipe whose write end is held only by this app. The watchdog subshell
 ///     blocks reading it; the read returns EOF the instant the app's last file
-///     descriptor closes — normal quit, crash, or `kill -9`, which no handler
-///     of ours could ever catch — and it then takes Node down. This is the
+///     descriptor closes: normal quit, crash, or `kill -9`, which no handler
+///     of ours could ever catch, and it then takes Node down. This is the
 ///     answer to "force-quit the app and check `ps`".
 ///  2. **We learn when the server dies.** The wrapper `wait`s on Node and then
 ///     exits, so the app's process-exit source fires and can show the
@@ -259,7 +259,7 @@ root=$4
 child=$!
 
 # Blocks on fd 3 until the app goes away, then stops the server. `read` is a
-# builtin, so this subshell *is* the waiter — no stray helper process.
+# builtin, so this subshell *is* the waiter: no stray helper process.
 (
   read -r _ <&3 2>/dev/null
   kill -TERM "$child" 2>/dev/null
@@ -296,7 +296,7 @@ final class ServerProcess {
 
     private var pid: pid_t = -1
     /// Remembered separately from `pid`, because once the child is reaped we
-    /// still want one final sweep of its group — the watchdog subshell can
+    /// still want one final sweep of its group: the watchdog subshell can
     /// outlive a shell that was killed before it could tidy up.
     private var processGroup: pid_t = -1
     private var keepAliveWrite: Int32 = -1
@@ -304,7 +304,7 @@ final class ServerProcess {
     private var deliberateStop = false
 
     /// Called on the main queue if the server exits while we still want it.
-    /// The argument is a human-readable reason, not a raw code — the wrapper
+    /// The argument is a human-readable reason, not a raw code: the wrapper
     /// shell sits between us and Node, so the number alone would mislead.
     var onUnexpectedExit: ((String) -> Void)?
 
@@ -339,7 +339,7 @@ final class ServerProcess {
         posix_spawnattr_init(&attrs)
         defer { posix_spawnattr_destroy(&attrs) }
         // Own process group, so one killpg() reaps the shell, Node and the
-        // watchdog together — and so nothing we signal can reach this app.
+        // watchdog together, and so nothing we signal can reach this app.
         posix_spawnattr_setflags(&attrs, Int16(POSIX_SPAWN_SETPGROUP))
         posix_spawnattr_setpgroup(&attrs, 0)
 
@@ -380,8 +380,8 @@ final class ServerProcess {
     }
 
     /// Collects the child and describes how it went. `waitpid` can legitimately
-    /// come back with nothing to report — someone else may already have reaped
-    /// it — so say "unknown" rather than inventing a confident exit code 0.
+    /// come back with nothing to report: someone else may already have reaped
+    /// it, so say "unknown" rather than inventing a confident exit code 0.
     @discardableResult
     private func reap() -> String {
         guard pid > 0 else { return "already gone" }
@@ -583,6 +583,70 @@ final class CurtainView: NSView {
 }
 
 /// A small ember eye, drawn so the waiting screen is recognisably Ground Control.
+/// A container that accepts folders dragged in from Finder.
+///
+/// This is the one place in Ground Control where a drop is unambiguous: AppKit hands
+/// over the real `file://` URLs, where a browser deliberately withholds them.
+/// The paths go straight to the dashboard's own add-a-folder dialog.
+final class DropHostView: NSView {
+
+    /// Called on the main queue with the absolute paths of the dropped folders.
+    var onFolders: (([String]) -> Void)?
+
+    private let highlight = CALayer()
+    private var isTargeted = false { didSet { needsDisplay = true } }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        registerForDraggedTypes([.fileURL])
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        registerForDraggedTypes([.fileURL])
+    }
+
+    /// Directories only. A dragged file is not something Ground Control can watch, and
+    /// refusing it during the drag is kinder than accepting and then erroring.
+    private func folders(in sender: NSDraggingInfo) -> [String] {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [
+            .urlReadingFileURLsOnly: true,
+        ]
+        guard let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self],
+                                                               options: options) as? [URL] else { return [] }
+        return urls.compactMap { url in
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue
+            else { return nil }
+            return url.path
+        }
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        isTargeted = !folders(in: sender).isEmpty
+        return isTargeted ? .copy : []
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        return isTargeted ? .copy : []
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) { isTargeted = false }
+    override func draggingEnded(_ sender: NSDraggingInfo) { isTargeted = false }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        return !folders(in: sender).isEmpty
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let paths = folders(in: sender)
+        isTargeted = false
+        guard !paths.isEmpty else { return false }
+        onFolders?(paths)
+        return true
+    }
+}
+
 final class IrisView: NSView {
     override var isFlipped: Bool { true }
     override func draw(_ dirtyRect: NSRect) {
@@ -618,7 +682,7 @@ final class IrisView: NSView {
 // MARK: - Application
 // ═══════════════════════════════════════════════════════════════════════════
 
-final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
 
     private var window: NSWindow!
     private var webView: WKWebView!
@@ -654,7 +718,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         server = nil
     }
 
-    /// Closing the window is a quit — the contract wants the server gone in
+    /// Closing the window is a quit: the contract wants the server gone in
     /// that case too, and a Ground Control with no window has nothing left to do.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
@@ -666,7 +730,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 
     /// SIGTERM from Activity Monitor, or SIGINT when run from a terminal.
-    /// SIGKILL cannot be handled — the shell watchdog covers that case.
+    /// SIGKILL cannot be handled: the shell watchdog covers that case.
     private func installSignalHandlers() {
         for sig in [SIGTERM, SIGINT, SIGHUP] {
             signal(sig, SIG_IGN)
@@ -698,9 +762,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         window.tabbingMode = .disallowed
         window.isReleasedWhenClosed = false
 
-        let root = NSView(frame: content)
+        // The whole content area accepts a folder dragged in from Finder. AppKit
+        // gives us the real path; the browser never would.
+        let root = DropHostView(frame: content)
         root.wantsLayer = true
         root.layer?.backgroundColor = Palette.obsidian.cgColor
+        root.onFolders = { [weak self] paths in self?.offerFolders(paths) }
         window.contentView = root
 
         // Web view ─────────────────────────────────────────────────────────
@@ -708,6 +775,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         config.websiteDataStore = .default()
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
         config.suppressesIncrementalRendering = true      // no half-painted first frame
+        // The dashboard asks for the system folder chooser through this; inside
+        // the app an NSOpenPanel is a real, frontmost, focus-correct sheet,
+        // where the server's osascript fallback is a dialog from another process.
+        config.userContentController.add(self, name: "gcPickFolder")
 
         webView = WKWebView(frame: root.bounds, configuration: config)
         webView.autoresizingMask = [.width, .height]
@@ -818,7 +889,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         }
     }
 
-    /// Only now does the window reach the screen — obsidian all the way, with
+    /// Only now does the window reach the screen: obsidian all the way, with
     /// no white frame and no "could not connect" page in between (§3.3, §4).
     private func revealContent() {
         guard !hasShownContent, !showingFailure else { return }
@@ -912,6 +983,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     @objc func reloadPage(_ sender: Any?) { webView.reloadFromOrigin() }
 
+    // ─────────────────────────────────────────────────────── adding folders ──
+
+    /// File ▸ Add Folder…: the same NSOpenPanel the dashboard's "Choose…"
+    /// button reaches through the script bridge.
+    @objc func addFolder(_ sender: Any?) {
+        chooseFolder { [weak self] path in
+            guard let self, let path else { return }
+            self.offerFolders([path])
+        }
+    }
+
+    /// One folder, chosen with a real system panel. `nil` means cancelled.
+    private func chooseFolder(_ done: @escaping (String?) -> Void) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        panel.prompt = "Choose"
+        panel.message = "Choose a folder for Ground Control to watch."
+        NSApp.activate(ignoringOtherApps: true)
+        if let window, window.isVisible {
+            panel.beginSheetModal(for: window) { response in
+                done(response == .OK ? panel.url?.path : nil)
+            }
+        } else {
+            done(panel.runModal() == .OK ? panel.url?.path : nil)
+        }
+    }
+
+    /// Hand paths to the dashboard, which confirms them in its own dialog.
+    /// Nothing is added here: the app shell never writes to the source list.
+    private func offerFolders(_ paths: [String]) {
+        guard hasShownContent, !paths.isEmpty else { return }
+        guard let json = try? JSONSerialization.data(withJSONObject: paths),
+              let arg = String(data: json, encoding: .utf8) else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        window?.makeKeyAndOrderFront(nil)
+        webView.evaluateJavaScript(
+            "(window.groundControlAddFolders && window.groundControlAddFolders(\(arg))) === true") { _, _ in }
+    }
+
+    /// `window.webkit.messageHandlers.gcPickFolder.postMessage(...)`
+    func userContentController(_ controller: WKUserContentController,
+                               didReceive message: WKScriptMessage) {
+        guard message.name == "gcPickFolder" else { return }
+        chooseFolder { [weak self] path in
+            guard let self else { return }
+            // JSONSerialization refuses a bare string, so the path travels as a
+            // one-element array and the page reads element zero.
+            var arg = "null"
+            if let path,
+               let data = try? JSONSerialization.data(withJSONObject: [path]),
+               let array = String(data: data, encoding: .utf8) {
+                arg = "\(array)[0]"
+            }
+            self.webView.evaluateJavaScript(
+                "window.groundControlPickedFolder && window.groundControlPickedFolder(\(arg))") { _, _ in }
+        }
+    }
+
     @objc func actualSize(_ sender: Any?) { webView.pageZoom = 1.0 }
     @objc func zoomIn(_ sender: Any?) { webView.pageZoom = min(webView.pageZoom * 1.1, 3.0) }
     @objc func zoomOut(_ sender: Any?) { webView.pageZoom = max(webView.pageZoom / 1.1, 0.5) }
@@ -935,7 +1067,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     private func openExternally(_ url: URL) {
         guard let scheme = url.scheme?.lowercased() else { return }
         // Only hand the workspace things it should be handing to a browser or
-        // a mail client — never a file:// path the page talked us into.
+        // a mail client: never a file:// path the page talked us into.
         guard ["http", "https", "mailto"].contains(scheme) else { return }
         NSWorkspace.shared.open(url)
     }
@@ -949,7 +1081,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         decisionHandler(.cancel)
     }
 
-    /// Anything the app cannot render itself — a download, a PDF, a zip —
+    /// Anything the app cannot render itself (a download, a PDF, a zip)
     /// belongs to the browser, not to a blank window here (§5).
     func webView(_ webView: WKWebView,
                  decidePolicyFor navigationResponse: WKNavigationResponse,
@@ -964,7 +1096,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     /// `target="_blank"` and `window.open`. Returning nil with no side effect
     /// would swallow the click; returning a real web view would open a second,
-    /// chrome-less window. Both are wrong — send it to the browser (§5).
+    /// chrome-less window. Both are wrong: send it to the browser (§5).
     func webView(_ webView: WKWebView,
                  createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction,
@@ -1063,6 +1195,8 @@ enum MenuBar {
 
         // ── File ──────────────────────────────────────────────────────────
         let file = NSMenu(title: "File")
+        file.addItem(action("Add Folder…", #selector(AppDelegate.addFolder(_:)), "o", [.command, .shift], target: target))
+        file.addItem(.separator())
         file.addItem(action("Rescan Projects", #selector(AppDelegate.rescan(_:)), "r", target: target))
         file.addItem(.separator())
         file.addItem(action("Open Server Log…", #selector(AppDelegate.showServerLog(_:)), "l", target: target))

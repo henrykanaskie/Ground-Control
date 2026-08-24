@@ -1,5 +1,5 @@
 /* ============================================================================
-   Ground Control — app shell
+   Ground Control: app shell
    Dark-only. One warm ember accent, used sparingly.
    Design tokens below are shared with doc.css (Agent C consumes, never redefines).
    ========================================================================= */
@@ -43,7 +43,7 @@ ul,ol{list-style:none}
 button,input,select,textarea{font:inherit;color:inherit}
 a{color:inherit;text-decoration:none}
 svg{display:block}
-/* Author `display` rules outrank the UA [hidden] rule — restore it. */
+/* Author `display` rules outrank the UA [hidden] rule: restore it. */
 [hidden]{display:none!important}
 .sprite{position:absolute;width:0;height:0;overflow:hidden}
 
@@ -91,7 +91,7 @@ svg{display:block}
 }
 .topbar-in{display:flex;align-items:center;gap:20px}
 
-/* Up one level — reader → project → all projects. Hidden on the grid, which
+/* Up one level: reader → project → all projects. Hidden on the grid, which
    has no level above it. The `[hidden]` rule is load-bearing: the attribute's
    default `display:none` loses to the `display:flex` above it. */
 .upnav{
@@ -283,7 +283,7 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 .card-title::after{content:"";position:absolute;inset:0;border-radius:var(--radius)}
 .card:hover .card-title{color:#fff}
 /* ── Move-to-Trash, available on any project ───────────────────────────── */
-.dtrash{margin-top:14px}
+.dtrash{margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .dtrash-b{
   color:var(--text-3);border-color:var(--line);background:transparent;
 }
@@ -292,7 +292,7 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 
 /* ── Forge build indicator ─────────────────────────────────────────────── */
 /* Sits above the stretched card link so its tooltip is reachable, but takes no
-   pointer events itself — the whole card must stay clickable (see .wb-live). */
+   pointer events itself: the whole card must stay clickable (see .wb-live). */
 .forge-badge{
   position:relative;z-index:2;pointer-events:none;
   display:inline-flex;align-items:center;gap:5px;flex:none;
@@ -316,7 +316,7 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
   font-family:var(--mono);font-size:9px;font-weight:600;
   letter-spacing:.1em;text-transform:uppercase;
 }
-/* Onboarding — a hammer. Wind up, strike, settle: weighted so the strike is
+/* Onboarding: a hammer. Wind up, strike, settle: weighted so the strike is
    fast and the recovery slower, which reads as a hammer, not a metronome. */
 @keyframes forgePound{
   0%   {transform:rotate(-22deg)}
@@ -330,7 +330,7 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
   animation:forgePound 820ms cubic-bezier(.4,0,.35,1) infinite;
 }
 
-/* Design — a drafting compass sweeping an arc. Slower and smoother: this
+/* Design: a drafting compass sweeping an arc. Slower and smoother: this
    document is deliberation, not striking. */
 @keyframes forgeSweep{
   0%,100%{transform:rotate(-32deg)}
@@ -341,7 +341,7 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
   animation:forgeSweep 2s ease-in-out infinite;
 }
 
-/* Code — angle brackets blinking like a caret. Stepped, not eased, because a
+/* Code: angle brackets blinking like a caret. Stepped, not eased, because a
    cursor snaps. */
 @keyframes forgeCaret{
   0%,55%  {opacity:1}
@@ -678,7 +678,7 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 }
 
 /* ============================================================================
-   Forge — artifact generation (CONTRACT-FORGE.md §9)
+   Forge: artifact generation (CONTRACT-FORGE.md §9)
    Same obsidian panel vocabulary as the rest of the detail view; the ember
    accent shows up only on the primary action and on a live run.
    ========================================================================= */
@@ -872,11 +872,11 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 }
 
 /* ============================================================================
-   Workbench — open, hop, and watch (CONTRACT-WORKBENCH.md §5)
+   Workbench: open, hop, and watch (CONTRACT-WORKBENCH.md §5)
 
    Same obsidian vocabulary as the rest of the app. The ember accent appears in
    exactly two new places: a live agent, and the primary Open action. Every
-   other card must stay calm — the live indicator is an accent, not chrome.
+   other card must stay calm: the live indicator is an accent, not chrome.
    ========================================================================= */
 
 /* ── topbar jump button ──────────────────────────────────────────────── */
@@ -1019,7 +1019,7 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
   font-family:var(--mono);letter-spacing:-.01em;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
-/* A single sweep travelling the strip — the one ambient motion allowed here.
+/* A single sweep travelling the strip: the one ambient motion allowed here.
    Kept under 8% opacity so a wall of cards never reads as busy. */
 /* The card is one big link: `.card-title::after` stretches over it. `.wb-live`
    is positioned and comes later in the DOM, so without this it paints on top
@@ -1041,7 +1041,7 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
   background:none;border:none;padding:0;margin:-4px 0 12px;
 }
 .wb-live.is-idle::after{display:none}
-/* The quiet rows carry the same figure a size down — present, not shouting. */
+/* The quiet rows carry the same figure a size down: present, not shouting. */
 .wb-live.is-idle .wb-core{width:16px;height:16px}
 .wb-live.is-idle .wb-pip{background:var(--text-3);box-shadow:none}
 .wb-live.is-idle .wb-pip::after{display:none}
@@ -1266,7 +1266,7 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 }
 
 @media (prefers-reduced-motion: reduce){
-  /* The pulse is the one motion the contract calls out — drop it entirely. */
+  /* The pulse is the one motion the contract calls out: drop it entirely. */
   .wb-live .wb-pip::after,.wb-lead .wb-pip::after{animation:none;opacity:0}
   .wb-live .wb-pip,.wb-lead .wb-pip{box-shadow:0 0 0 3px var(--ember-glow)}
   /* The agent core still reads at rest: satellites keep their phase offsets,
@@ -1276,21 +1276,21 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
   .wb-live::after{animation:none;opacity:0}
 }
 
-/* Long Bash commands and prose alike stop at two lines — the timeline is a
+/* Long Bash commands and prose alike stop at two lines: the timeline is a
    glance, not a transcript. */
 .wb-ev .wb-ev-x{
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
 }
 
 /* ============================================================================
-   RECLAIM — flag and remove dead folders (CONTRACT-RECLAIM.md §6)
+   RECLAIM: flag and remove dead folders (CONTRACT-RECLAIM.md §6)
 
    Appended below Workbench. Consumes the shared tokens from :root above and
    redefines none of them.
 
    The visual argument this section makes: candidates are quiet and neutral,
-   the protected group is the loud one. Red is spent in exactly two places —
-   the confirm button and the refusal panel — so it still means something.
+   the protected group is the loud one. Red is spent in exactly two places,
+   the confirm button and the refusal panel, so it still means something.
    ========================================================================= */
 
 /* ── the one affordance in the grid ──────────────────────────────────── */
@@ -1432,7 +1432,7 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 .rc-foot{margin-top:34px;font-size:12px;line-height:1.6;color:var(--text-3);max-width:70ch}
 
 /* ============================================================================
-   The removal dialog — the only destructive control in Ground Control
+   The removal dialog: the only destructive control in Ground Control
    ========================================================================= */
 .rc-dialog{
   width:min(560px,calc(100vw - 28px));max-height:min(88vh,860px);
@@ -1524,4 +1524,277 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 @media (prefers-reduced-motion: reduce){
   .rc-slot,.rc-d-field input{transition:none}
   .rc-d-foot .btn.is-busy .icon{animation:none}
+}
+
+/* ============================================================================
+   SOURCES: the folders Ground Control watches (CONTRACT-SOURCES.md §5)
+
+   The dashboard used to name one root and be done. It now names a list, so the
+   header gains a control instead of a label: quiet when there is one folder,
+   informative when there are several, and never louder than the project grid
+   it sits above.
+   ========================================================================= */
+
+/* ── header control ──────────────────────────────────────────────────── */
+.src-btn{
+  display:inline-flex;align-items:center;gap:7px;min-width:0;max-width:38ch;
+  height:26px;padding:0 8px;
+  background:transparent;border:1px solid transparent;border-radius:var(--radius-xs);
+  color:var(--text-3);font-family:var(--mono);font-size:11.5px;letter-spacing:-.01em;
+  cursor:pointer;transition:background var(--t-fast),border-color var(--t-fast),color var(--t-fast);
+}
+.src-btn:hover{background:var(--panel);border-color:var(--line);color:var(--text-2)}
+.src-btn[aria-expanded="true"]{background:var(--panel-2);border-color:var(--line-2);color:var(--text)}
+.src-btn .icon{width:14px;height:14px;flex:none;color:var(--text-3)}
+.src-btn:hover .icon,.src-btn[aria-expanded="true"] .icon{color:var(--ember)}
+.src-btn-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.src-btn-c{width:12px!important;height:12px!important;opacity:.7;transition:transform var(--t-fast)}
+.src-btn[aria-expanded="true"] .src-btn-c{transform:rotate(180deg)}
+.src-btn-n{
+  flex:none;padding:1px 5px;border-radius:20px;font-size:10px;
+  background:var(--panel-2);border:1px solid var(--line);color:var(--text-3);
+}
+/* A watched folder that is no longer there. Loud enough to notice, quiet
+   enough not to look like an outage: the dashboard still works. */
+.src-btn.is-bad{color:#e2c188}
+.src-btn.is-bad .icon{color:#f0b3b3}
+.src-btn.is-bad .src-btn-n{border-color:#5a2a2a;color:#f0b3b3}
+
+/* ── the panel ───────────────────────────────────────────────────────── */
+.src-panel{
+  position:fixed;z-index:70;width:min(430px,calc(100vw - 24px));
+  max-height:min(560px,calc(100vh - 90px));overflow-y:auto;
+  padding:8px;border-radius:var(--radius);
+  background:var(--panel);border:1px solid var(--line-2);
+  box-shadow:0 12px 34px rgba(0,0,0,.5);
+  animation:srcIn 140ms var(--ease);
+}
+@keyframes srcIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+
+.src-panel-h{
+  display:flex;align-items:center;gap:8px;
+  padding:6px 8px 8px;font-size:10px;font-weight:650;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--text-3);
+}
+.src-panel-h .src-panel-hn{margin-left:auto;font-weight:500;letter-spacing:.04em;text-transform:none;font-size:11px}
+
+.src-item{
+  display:flex;align-items:flex-start;gap:10px;
+  padding:9px 10px;border-radius:var(--radius-sm);
+  border:1px solid transparent;
+}
+.src-item + .src-item{margin-top:2px}
+.src-item:hover{background:var(--panel-2);border-color:var(--line)}
+.src-item.is-missing{background:rgba(220,70,70,.05)}
+.src-item-i{width:15px;height:15px;flex:none;margin-top:2px;color:var(--text-3)}
+.src-item.is-root .src-item-i{color:var(--ember)}
+.src-item.is-missing .src-item-i{color:#f8a4a4}
+.src-item-b{flex:1;min-width:0}
+.src-item-n{
+  display:flex;align-items:baseline;gap:8px;
+  font-size:13.5px;font-weight:600;color:var(--text);letter-spacing:-.01em;
+}
+.src-item-k{
+  font-size:9.5px;font-weight:650;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--text-3);border:1px solid var(--line-2);border-radius:var(--radius-xs);padding:1px 5px;
+}
+.src-item-p{
+  margin-top:3px;font-family:var(--mono);font-size:11px;color:var(--text-3);
+  overflow-wrap:anywhere;line-height:1.45;
+}
+.src-item-m{margin-top:5px;font-size:11.5px;color:var(--text-2);font-variant-numeric:tabular-nums}
+.src-item-m.is-bad{color:#f0a3a3}
+.src-item-x{
+  flex:none;width:26px;height:26px;display:grid;place-items:center;
+  background:transparent;border:1px solid transparent;border-radius:var(--radius-xs);
+  color:var(--text-3);cursor:pointer;transition:all var(--t-fast);
+}
+.src-item-x:hover{background:rgba(220,70,70,.1);border-color:#5a2a2a;color:#f0a3a3}
+.src-item-x .icon{width:13px;height:13px}
+.src-item-x[disabled]{opacity:.35;cursor:default}
+
+.src-panel-foot{display:flex;gap:8px;padding:10px 4px 4px;border-top:1px solid var(--line);margin-top:8px}
+.src-panel-foot .btn{flex:1;justify-content:center}
+.src-panel-note{
+  padding:8px 10px 2px;font-size:11.5px;line-height:1.55;color:var(--text-3);
+}
+.src-panel-err{
+  margin:4px;padding:9px 11px;border-radius:var(--radius-sm);
+  background:#241315;border:1px solid #5a2a2a;color:#f8c4c4;font-size:12px;line-height:1.5;
+}
+
+/* ── empty dashboard ─────────────────────────────────────────────────── */
+.src-blank{
+  padding:52px 24px;text-align:center;
+  background:var(--panel);border:1px dashed var(--line-2);border-radius:var(--radius);
+}
+.src-blank-i{width:26px;height:26px;margin:0 auto 14px;color:var(--ember)}
+.src-blank h2{font-size:17px;font-weight:650;letter-spacing:-.02em;color:var(--text)}
+.src-blank p{margin-top:10px;font-size:13.5px;line-height:1.65;color:var(--text-3);max-width:56ch;margin-inline:auto}
+.src-blank-a{margin-top:20px;display:flex;justify-content:center;gap:10px}
+
+/* ── "stop watching", beside "move to Trash" on the project page ─────── */
+/* Deliberately the quieter of the two: one is a filing decision, the other
+   moves a folder to the Trash, and they must never look interchangeable. */
+.src-detach{height:30px;color:var(--text-3)}
+.src-detach:hover{border-color:var(--line-2);color:var(--text-2)}
+.src-detach .icon{width:12px;height:12px}
+
+/* ── card provenance chip ────────────────────────────────────────────── */
+/* Only drawn when more than one folder is watched: with a single source it
+   would say the same thing on every card and mean nothing. */
+.card-src{
+  display:inline-flex;align-items:center;gap:5px;
+  margin-bottom:9px;font-size:10.5px;color:var(--text-3);
+  font-family:var(--mono);letter-spacing:-.01em;
+  max-width:100%;
+}
+.card-src .icon{width:11px;height:11px;flex:none;opacity:.8}
+.card-src span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card:hover .card-src{color:var(--text-2)}
+
+/* ── drag-and-drop ───────────────────────────────────────────────────── */
+.dropzone{
+  position:fixed;inset:0;z-index:90;display:grid;place-items:center;
+  background:rgba(6,7,9,.82);backdrop-filter:blur(4px);
+  animation:fade 120ms var(--ease);
+}
+.dropzone[hidden]{display:none}
+.dropzone-in{
+  padding:40px 56px;text-align:center;border-radius:18px;
+  border:2px dashed var(--ember-2);background:rgba(21,24,29,.9);
+  box-shadow:0 0 0 1px rgba(245,158,11,.12),0 20px 60px rgba(0,0,0,.5);
+}
+.dropzone-i{width:34px;height:34px;color:var(--ember);margin:0 auto 14px;
+  animation:dropBob 1.5s var(--ease) infinite}
+@keyframes dropBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+.dropzone-h{font-size:18px;font-weight:650;letter-spacing:-.02em;color:var(--text)}
+.dropzone-p{margin-top:8px;font-size:13px;color:var(--text-2)}
+
+/* ── add-a-folder dialog ─────────────────────────────────────────────── */
+.src-dialog{
+  width:min(620px,calc(100vw - 32px));max-height:min(84vh,760px);
+  padding:0;border:1px solid var(--line-2);border-radius:var(--radius);
+  background:var(--panel);color:var(--text);box-shadow:0 24px 70px rgba(0,0,0,.6);
+}
+.src-dialog::backdrop{background:rgba(6,7,9,.76);backdrop-filter:blur(3px)}
+.src-d-in{display:flex;flex-direction:column;gap:14px;padding:22px;overflow-y:auto;max-height:inherit}
+.src-d-h{font-size:17px;font-weight:650;letter-spacing:-.02em;color:var(--text)}
+.src-d-sub{font-size:13px;line-height:1.6;color:var(--text-3);margin-top:-6px}
+
+.src-d-row{display:flex;gap:8px;align-items:stretch}
+.src-d-row input{
+  flex:1;min-width:0;height:38px;padding:0 12px;
+  background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--radius-sm);
+  color:var(--text);font-family:var(--mono);font-size:12.5px;
+}
+.src-d-row input::placeholder{color:var(--text-3);opacity:.7}
+.src-d-row input:focus{border-color:var(--ember-2)}
+.src-d-row input:focus-visible{outline:none;box-shadow:0 0 0 3px var(--ember-glow)}
+.src-d-row .btn{height:38px;flex:none}
+
+.src-d-label{
+  font-size:10px;font-weight:650;letter-spacing:.09em;text-transform:uppercase;color:var(--text-3);
+}
+
+/* the live verdict on whatever path is in the box */
+.src-d-peek{
+  padding:13px 15px;border-radius:var(--radius-sm);
+  background:var(--bg-2);border:1px solid var(--line);
+  font-size:13px;line-height:1.6;color:var(--text-2);min-height:56px;
+}
+.src-d-peek.is-good{border-color:#2c4a34;background:rgba(74,222,128,.05)}
+.src-d-peek.is-bad{border-color:#5a2a2a;background:rgba(248,113,113,.05);color:#f0b3b3}
+.src-d-peek-h{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--text)}
+.src-d-peek.is-bad .src-d-peek-h{color:#f8c4c4}
+.src-d-peek-h .icon{width:15px;height:15px;flex:none}
+.src-d-peek.is-good .src-d-peek-h .icon{color:var(--active)}
+.src-d-peek.is-bad .src-d-peek-h .icon{color:#f8a4a4}
+.src-d-peek-p{margin-top:6px}
+.src-d-peek-s{margin-top:8px;font-family:var(--mono);font-size:11.5px;color:var(--text-3);overflow-wrap:anywhere}
+
+/* how it will be read: one project, or a folder of them */
+.src-d-kinds{display:flex;gap:8px}
+.src-d-kind{
+  flex:1;display:flex;align-items:flex-start;gap:9px;text-align:left;
+  padding:11px 13px;border-radius:var(--radius-sm);cursor:pointer;
+  background:var(--bg-2);border:1px solid var(--line);color:var(--text-2);
+  transition:all var(--t-fast);
+}
+.src-d-kind:hover{border-color:var(--line-2)}
+.src-d-kind[aria-pressed="true"]{border-color:var(--ember-2);background:rgba(245,158,11,.06);color:var(--text)}
+.src-d-kind .icon{width:15px;height:15px;flex:none;margin-top:1px;color:var(--text-3)}
+.src-d-kind[aria-pressed="true"] .icon{color:var(--ember)}
+.src-d-kind-n{display:block;font-size:12.5px;font-weight:600;color:inherit}
+.src-d-kind-d{display:block;margin-top:2px;font-size:11.5px;line-height:1.45;color:var(--text-3)}
+
+/* the inline browser */
+.src-d-browse{
+  border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--bg-2);overflow:hidden;
+}
+.src-d-crumb{
+  display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:11.5px;color:var(--text-3);
+}
+.src-d-crumb .src-d-cpath{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.src-d-up,.src-d-home{
+  flex:none;width:24px;height:24px;display:grid;place-items:center;border-radius:var(--radius-xs);
+  background:transparent;border:1px solid transparent;color:var(--text-3);cursor:pointer;
+}
+.src-d-up:hover,.src-d-home:hover{background:var(--panel);border-color:var(--line);color:var(--text)}
+.src-d-up .icon,.src-d-home .icon{width:13px;height:13px}
+.src-d-up[disabled]{opacity:.3;cursor:default}
+
+.src-d-list{max-height:230px;overflow-y:auto;padding:4px}
+.src-d-entry{
+  display:flex;align-items:center;gap:9px;width:100%;
+  padding:7px 9px;border-radius:var(--radius-xs);
+  background:transparent;border:1px solid transparent;color:var(--text-2);
+  font-size:13px;text-align:left;cursor:pointer;
+}
+.src-d-entry:hover,.src-d-entry:focus-visible{background:var(--panel);color:var(--text);outline:none}
+.src-d-entry:focus-visible{box-shadow:inset 0 0 0 1px var(--ember-2)}
+.src-d-entry.is-sel{background:var(--panel-2);border-color:var(--ember-2);color:var(--text)}
+.src-d-entry .icon{width:14px;height:14px;flex:none;color:var(--text-3)}
+.src-d-entry.is-project .icon{color:var(--ember)}
+.src-d-entry-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.src-d-entry-t{flex:none;font-size:10px;font-family:var(--mono);color:var(--text-3)}
+.src-d-entry-go{
+  flex:none;width:22px;height:22px;display:grid;place-items:center;border-radius:var(--radius-xs);
+  color:var(--text-3);
+}
+.src-d-entry:hover .src-d-entry-go{color:var(--ember)}
+.src-d-empty{padding:22px 10px;text-align:center;font-size:12.5px;color:var(--text-3)}
+
+/* the "we found these" list after a nameless drop */
+.src-d-hits{display:flex;flex-direction:column;gap:6px}
+.src-d-hit{
+  display:flex;align-items:center;gap:10px;padding:10px 12px;
+  border-radius:var(--radius-sm);background:var(--bg-2);border:1px solid var(--line);
+  color:var(--text-2);font-size:12.5px;text-align:left;cursor:pointer;width:100%;
+}
+.src-d-hit:hover{border-color:var(--ember-2);color:var(--text)}
+.src-d-hit .icon{width:14px;height:14px;flex:none;color:var(--text-3)}
+.src-d-hit:hover .icon{color:var(--ember)}
+.src-d-hit-p{flex:1;min-width:0;font-family:var(--mono);font-size:11.5px;overflow-wrap:anywhere}
+
+.src-d-err{font-size:12.5px;line-height:1.5;color:#f8a4a4}
+.src-d-err:empty{display:none}
+.src-d-foot{display:flex;justify-content:flex-end;gap:10px;padding-top:4px}
+.src-d-foot .btn{height:36px}
+.src-d-foot .src-d-spacer{margin-right:auto}
+
+@media (max-width:760px){
+  .src-btn{max-width:20ch}
+  .src-d-kinds{flex-direction:column}
+  .src-d-foot{flex-direction:column-reverse}
+  .src-d-foot .btn{width:100%;justify-content:center}
+  .src-d-foot .src-d-spacer{margin-right:0}
+}
+
+@media (prefers-reduced-motion:reduce){
+  .src-panel{animation:none}
+  .dropzone{animation:none}
+  .dropzone-i{animation:none}
+  .src-btn,.src-btn-c,.src-d-kind,.src-item-x{transition:none}
 }

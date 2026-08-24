@@ -51,11 +51,19 @@
   <!-- Reclaim -->
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.4 6.8h15.2"/><path d="M9.4 6.8V5.2a1.4 1.4 0 0 1 1.4-1.4h2.4a1.4 1.4 0 0 1 1.4 1.4v1.6"/><path d="M6.6 6.8 7.5 19a1.6 1.6 0 0 0 1.6 1.5h5.8a1.6 1.6 0 0 0 1.6-1.5l.9-12.2"/><path d="M10.4 10.4v6M13.6 10.4v6"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.2 5.2 6v6c0 4.2 2.9 7.4 6.8 8.8 3.9-1.4 6.8-4.6 6.8-8.8V6Z"/><path d="M9.2 12.2l2 2 3.6-3.9"/></symbol>
-  <!-- review-for-removal: a folder drawn hollow. Deliberately NOT a trash can —
+  <!-- review-for-removal: a folder drawn hollow. Deliberately NOT a trash can,
        clicking Review deletes nothing; the trash can is reserved for the
        destructive confirm so the two never look interchangeable. -->
   <symbol id="i-hollow" viewBox="0 0 24 24"><path d="M3.2 6.6A1.4 1.4 0 0 1 4.6 5.2h4l1.8 2.2h7A1.4 1.4 0 0 1 18.8 8.8v8.6a1.4 1.4 0 0 1-1.4 1.4H4.6a1.4 1.4 0 0 1-1.4-1.4Z"/><path d="M7.4 14h9.2" stroke-dasharray="2.2 2.2" opacity=".85"/></symbol>
   <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4.8" y="10.4" width="14.4" height="9.8" rx="1.8"/><path d="M8.2 10.4V7.6a3.8 3.8 0 0 1 7.6 0v2.8"/></symbol>
+  <!-- Sources -->
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5.2v13.6M5.2 12h13.6"/></symbol>
+  <symbol id="i-folder-plus" viewBox="0 0 24 24"><path d="M3.2 6.6A1.4 1.4 0 0 1 4.6 5.2h4l1.8 2.2h7A1.4 1.4 0 0 1 18.8 8.8v8.6a1.4 1.4 0 0 1-1.4 1.4H4.6a1.4 1.4 0 0 1-1.4-1.4Z"/><path d="M11 11.2v5M8.5 13.7h5"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3.4 3.6 7.6 12 11.8l8.4-4.2Z"/><path d="m3.6 12.2 8.4 4.2 8.4-4.2"/><path d="m3.6 16.6 8.4 4.2 8.4-4.2"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M20.4 8.2v7.6L12 20.4 3.6 15.8V8.2L12 3.6Z"/><path d="m3.6 8.2 8.4 4.6 8.4-4.6M12 12.8v7.6"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M4.2 10.4 12 4.2l7.8 6.2v8.2a1.4 1.4 0 0 1-1.4 1.4H5.6a1.4 1.4 0 0 1-1.4-1.4Z"/><path d="M9.6 20v-6.2h4.8V20"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5.6"/><path d="m6.4 11.2 5.6-5.6 5.6 5.6"/></symbol>
+  <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 3.4c3.4 4 5.6 6.9 5.6 9.5a5.6 5.6 0 0 1-11.2 0c0-2.6 2.2-5.5 5.6-9.5Z"/></symbol>
 </svg>
 
 <!-- ── header ──────────────────────────────────────────────────────────── -->
@@ -64,13 +72,19 @@
     <a class="upnav" id="upnav" hidden>
       <svg class="icon" aria-hidden="true"><use href="#i-back"></use></svg>
     </a>
-    <a class="brand" href="#/" aria-label="Ground Control — all projects">
+    <a class="brand" href="#/" aria-label="Ground Control: all projects">
       <svg class="icon brand-eye" aria-hidden="true"><use href="#i-eye"></use></svg>
       <span class="brand-word">GROUND_CONTROL</span>
     </a>
 
     <div class="topbar-meta">
-      <span class="root-path mono" id="root-path" title="Scanned root"></span>
+      <!-- Sources: which folders the dashboard is watching (CONTRACT-SOURCES.md §5) -->
+      <button class="src-btn" id="src-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
+              title="The folders Ground Control is watching">
+        <svg class="icon" aria-hidden="true"><use href="#i-layers"></use></svg>
+        <span class="src-btn-t mono" id="src-btn-label">…</span>
+        <svg class="icon src-btn-c" aria-hidden="true"><use href="#i-chevron"></use></svg>
+      </button>
       <span class="counts" id="hdr-counts"></span>
     </div>
 
@@ -118,6 +132,12 @@
       <!-- Workbench: agent filter chip (CONTRACT-WORKBENCH.md §5) -->
       <div class="chips" id="wb-chips" role="group" aria-label="Filter by agent activity"></div>
 
+      <!-- Sources §5: only rendered once more than one folder is watched. -->
+      <div class="field field-select" id="f-source-wrap" hidden>
+        <label class="vh" for="f-source">Filter by folder</label>
+        <select id="f-source"><option value="">All folders</option></select>
+      </div>
+
       <div class="field field-select">
         <label class="vh" for="f-stack">Filter by stack</label>
         <select id="f-stack"><option value="">All stacks</option></select>
@@ -147,6 +167,21 @@
     <div class="grid" id="grid"></div>
     <div class="grid" id="skeletons" aria-hidden="true"></div>
 
+    <!-- Sources §5: shown instead of the grid when no folder is watched at all. -->
+    <div class="src-blank" id="src-blank" hidden>
+      <svg class="icon src-blank-i" aria-hidden="true"><use href="#i-folder-plus"></use></svg>
+      <h2>No folders yet</h2>
+      <p>Ground Control watches folders you choose: a folder full of projects, a single
+         project anywhere on disk, or any mix of the two. Drag one onto this window,
+         or add it below.</p>
+      <div class="src-blank-a">
+        <button class="btn btn-primary" id="src-blank-add" type="button">
+          <svg class="icon" aria-hidden="true"><use href="#i-plus"></use></svg>
+          <span>Add a folder</span>
+        </button>
+      </div>
+    </div>
+
     <div class="blank" id="grid-empty" hidden>
       <svg class="icon blank-icon" aria-hidden="true"><use href="#i-search"></use></svg>
       <h2>Nothing matches</h2>
@@ -165,6 +200,15 @@
   <section id="view-reclaim" class="view" aria-label="Reclaim dead folders" hidden></section>
 
 </main>
+
+<!-- ── drag-and-drop target (CONTRACT-SOURCES.md §5) ───────────────────── -->
+<div class="dropzone" id="dropzone" hidden aria-hidden="true">
+  <div class="dropzone-in">
+    <svg class="icon dropzone-i" aria-hidden="true"><use href="#i-folder-plus"></use></svg>
+    <div class="dropzone-h">Drop a folder to watch it</div>
+    <div class="dropzone-p">A folder of projects, or a single project: Ground Control works out which.</div>
+  </div>
+</div>
 
 <footer class="foot wrap">
   <span class="mono" id="foot-scan"></span>

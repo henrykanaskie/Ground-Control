@@ -1,8 +1,8 @@
-# Ground Control Forge — Artifact Generation Contract
+# Ground Control Forge - Artifact Generation Contract
 
 Ground Control can already *find* a project's onboarding document. Forge **creates** one:
-a single-file, self-contained HTML artifact — a genuine resource, not a markdown
-dump — grounded in what the repository actually contains.
+a single-file, self-contained HTML artifact (a genuine resource, not a markdown
+dump) grounded in what the repository actually contains.
 
 Read `CONTRACT.md` first; this extends it. All its hard rules still apply
 (Node stdlib only, vanilla browser JS, no npm, no CDN, no build step).
@@ -17,8 +17,8 @@ the user's existing auth and adds no dependency. It is spawned with read-only
 tool access scoped to the project, so the artifact can be verified against real
 code rather than hallucinated from a summary.
 
-Generation has two axes: **tier** — how the document is produced — and **kind** —
-which document it is. They are orthogonal, with exactly one exception, stated
+Generation has two axes: **tier** (how the document is produced) and **kind**
+(which document it is). They are orthogonal, with exactly one exception, stated
 below.
 
 Two tiers, and **for the onboarding kind the deterministic tier always exists**:
@@ -26,7 +26,7 @@ Two tiers, and **for the onboarding kind the deterministic tier always exists**:
 | Tier | Needs | Produces |
 |---|---|---|
 | `template` | nothing | A real artifact built purely from repo facts: composition, commit timeline, doc index, entry points, file map, stats. Always available, works offline. |
-| `authored` | `claude` on PATH | The full thing: a written explanation of what the project is, how it works, where to start, and what will bite you — with the deterministic visuals embedded. |
+| `authored` | `claude` on PATH | The full thing: a written explanation of what the project is, how it works, where to start, and what will bite you, with the deterministic visuals embedded. |
 
 (`CONTRACT-LOCAL.md` adds a third tier, `local`, on the same axis.)
 
@@ -35,17 +35,17 @@ Three kinds:
 | Kind | Tiers | Produces |
 |---|---|---|
 | `onboarding` (default) | any tier | The document above: what this project is, how to run it, where to start, what will bite you. For a developer who has to **operate** the codebase. |
-| `design` | `authored` only | A design-rationale document: why the codebase is built the way it is — the decisions, the forces behind them, the alternatives rejected, what each one costs. For a developer who wants to **learn** from the codebase. |
+| `design` | `authored` only | A design-rationale document: why the codebase is built the way it is, the decisions, the forces behind them, the alternatives rejected, what each one costs. For a developer who wants to **learn** from the codebase. |
 | `code` | `authored` only | A code breakdown: the syntax, idioms, libraries and services this project actually uses. For a developer who wants to **read** this code fluently and write code that fits in. Saves as `CODE.html`. |
 
-**Hard rule — every kind except `onboarding` requires the `authored` tier.**
+**Hard rule: every kind except `onboarding` requires the `authored` tier.**
 This is a deliberate exception to the guarantee stated above.
 `POST /api/forge/generate` with `kind:"design"` or `kind:"code"` and either
 `tier:"template"` or `tier:"local"` returns `400`. The reason is one principle,
 and it applies twice:
 
 - The `template` tier involves no model at all, and rationale cannot be derived
-  from repository facts — no amount of file-walking tells you *why* a timeout is
+  from repository facts: no amount of file-walking tells you *why* a timeout is
   800ms.
 - The `local` tier (`CONTRACT-LOCAL.md`) generates from the brief alone with no
   repository tool access, and emits a fixed onboarding-shaped JSON schema
@@ -61,17 +61,17 @@ only it can meet that bar.
 
 If `claude` is missing or generation fails, the **onboarding** kind falls back to
 `template` and says so plainly. The **design** kind has **no fallback tier of any
-kind** — it cannot run at all, and it fails honestly rather than substituting a
+kind**: it cannot run at all, and it fails honestly rather than substituting a
 document it did not promise. Neither kind ever reports success for a failed
 generation.
 
 ---
 
-## 0b. Billing — this runs on the user's Claude subscription
+## 0b. Billing - this runs on the user's Claude subscription
 
 Verified on this machine: `ANTHROPIC_API_KEY` is **unset**, the `claude` CLI is
 authenticated via its OAuth account, and the rate-limit tier is
-`default_claude_max_5x` — a **Claude Max subscription**. Headless `claude -p`
+`default_claude_max_5x`: a **Claude Max subscription**. Headless `claude -p`
 therefore draws on that subscription. There is no metered API key anywhere in
 this feature, and none must be introduced.
 
@@ -81,20 +81,20 @@ Requirements that follow:
 2. **Actively strip it from the child environment.** Build the subprocess env as
    a copy of `process.env` with `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and
    `ANTHROPIC_BASE_URL` **deleted**. A key set in the parent shell would shadow
-   the OAuth profile and silently move generation onto metered billing — that is
+   the OAuth profile and silently move generation onto metered billing: that is
    exactly the failure this deletion prevents. Comment it as such.
-3. **Never pass `--bare`** — it forces API-key auth and would break generation
+3. **Never pass `--bare`**: it forces API-key auth and would break generation
    outright for this user.
 4. **Do not present `total_cost_usd` as money charged.** The CLI reports a
    list-price equivalent; on a subscription nothing is billed per run. Surface it
-   as usage, worded plainly, e.g. *"~$0.42 of list-price usage — counts toward
+   as usage, worded plainly, e.g. *"~$0.42 of list-price usage; counts toward
    your Claude subscription, not billed separately."* Never render it as a charge,
    an invoice, or a running total of money spent.
 5. **Handle subscription limits as a first-class outcome.** If the CLI exits with
    a usage/rate-limit condition (non-zero exit, or a `result` event with
    `is_error` and a message mentioning limit/quota/usage), the job fails with a
-   clear, non-alarming message — *"Claude usage limit reached; this resets on a
-   rolling window. The data-only artifact is still available."* — and the UI
+   clear, non-alarming message: *"Claude usage limit reached; this resets on a
+   rolling window. The data-only artifact is still available."*, and the UI
    offers the `template` tier. Do not retry automatically in a loop.
 
 ---
@@ -109,7 +109,7 @@ Requirements that follow:
 
 Nobody else edits `lib/scan.js`, `lib/git.js`, `lib/docs.js`, `lib/util.js`,
 `public/js/markdown.js`, `public/css/doc.css`, `README.md`, or either CONTRACT.
-Agents D and E both touch `server.js` / `app.js` only in their own areas —
+Agents D and E both touch `server.js` / `app.js` only in their own areas:
 **append new code, never restructure existing code.**
 
 ---
@@ -128,7 +128,7 @@ Ground Control has been read-only until now. Forge changes that, so:
 4. **Destination is validated** with the same three gates as `/api/doc`
    (syntactic, post-`path.resolve`, post-`fs.realpath`) and must land inside the
    project. Only `.html` destinations are allowed. Reject anything else with 403.
-5. **The subprocess gets read-only tools.** Allow `Read`, `Glob`, `Grep` only —
+5. **The subprocess gets read-only tools.** Allow `Read`, `Glob`, `Grep` only,
    never `Write`, `Edit`, or `Bash`. The artifact HTML comes back over stdout;
    Ground Control writes the file, not the model.
 6. **Nothing is deleted, ever.** Staging files are pruned only by age
@@ -137,7 +137,7 @@ Ground Control has been read-only until now. Forge changes that, so:
 
 ---
 
-## 3. The repo brief — `lib/brief.js` (Agent D)
+## 3. The repo brief - `lib/brief.js` (Agent D)
 
 ```js
 export async function buildBrief(project, opts) -> Brief   // opts.kind: "onboarding" (default) | "design"
@@ -145,7 +145,7 @@ export function briefToMarkdown(brief) -> string           // compact; <= ~40KB 
 ```
 
 `project` is the `ProjectSummary` from `lib/scan.js` (plus `path`). The brief is
-gathered deterministically — no model involved — and must include:
+gathered deterministically (no model involved) and must include:
 
 - **Identity**: name, path, status, last activity, git remote/branch.
 - **Composition**: language byte breakdown, file/dir counts, size.
@@ -153,7 +153,7 @@ gathered deterministically — no model involved — and must include:
   bin, type), `pyproject.toml` / `requirements.txt`, `Package.swift`,
   `Cargo.toml`, `go.mod`, `Gemfile`, `*.xcodeproj`, `Makefile` targets,
   `Dockerfile`. Parse what's cheap; fall back to raw head otherwise.
-- **How to run it**: every runnable command found — npm scripts, Makefile
+- **How to run it**: every runnable command found: npm scripts, Makefile
   targets, `if __name__ == "__main__"` entry files, `main.swift`, `bin/*`.
 - **Entry points**: the most likely "start reading here" files, ranked
   (manifest `main`/`bin`, `index.*`, `main.*`, `app.*`, `cli.*`, `server.*`,
@@ -162,36 +162,36 @@ gathered deterministically — no model involved — and must include:
   dominant extension, so the shape is legible without listing 19,681 files.
 - **Existing prose**: full text of the featured doc plus `README`/`CLAUDE.md`
   (each capped at 24KB, noted when truncated). This is the single most valuable
-  input — the author must build on what the user already wrote, not ignore it.
+  input: the author must build on what the user already wrote, not ignore it.
 - **History**: commit count, first/last commit dates, up to 40 recent subjects,
   the 90-day activity array, and top-5 most-changed files (`git log --name-only`,
   bounded).
-- **Signals**: TODO/FIXME count with up to 15 samples (`file:line — text`),
-  test layout, dirty files, config/env files present (names only — **never read
+- **Signals**: TODO/FIXME count with up to 15 samples (`file:line - text`),
+  test layout, dirty files, config/env files present (names only: **never read
   `.env`, `creds*`, `*secret*`, `*key*`, `*.pem`; list the filename and stop**).
 
 ### 3b. The `design` block (`opts.kind === "design"`)
 
 When `opts.kind` is `"design"` the Brief gains a `design` block. It gathers the
-repository's **own recorded reasoning** — every entry is something a human in
+repository's **own recorded reasoning**: every entry is something a human in
 this repository actually wrote. Nothing in it is inferred, and no model is
 involved in producing it.
 
-- **`rationale[]`** — explanatory comment blocks, each paired with the
+- **`rationale[]`**: explanatory comment blocks, each paired with the
   declaration it sits above: `{path, line, text, subject}`, where `subject` is
   that declaration. Harvested **inside the existing text scan**, so it costs no
   extra I/O.
-- **`constants[]`** — named SCREAMING_SNAKE constants with literal values:
+- **`constants[]`**: named SCREAMING_SNAKE constants with literal values:
   `{path, line, name, value, documented}`. `documented` records whether a comment
-  explains the value. **Undocumented constants are reported as a finding** — a
+  explains the value. **Undocumented constants are reported as a finding**: a
   magic number nobody explained is a decision whose reason was lost, and that is
   exactly what the design document exists to surface.
-- **`designDocs[]`** — ADR / RFC / CONTRACT / DESIGN / ARCHITECTURE documents,
+- **`designDocs[]`**: ADR / RFC / CONTRACT / DESIGN / ARCHITECTURE documents,
   **read in full** (capped). `collectProse` deliberately does not reach these;
   the design kind does, because this is where reasoning gets written down.
-- **`commitRationale[]`** — commit messages that have a **body**. A subject says
+- **`commitRationale[]`**: commit messages that have a **body**. A subject says
   what changed; a body is where an author records why. Costs one extra `git log`.
-- **`coverage`** — how many candidate files were actually opened, so silence can
+- **`coverage`**: how many candidate files were actually opened, so silence can
   be told apart from "not scanned". Absence of evidence must itself be
   reportable.
 
@@ -202,7 +202,7 @@ full and the second `git log` do not run for an onboarding brief.
 if it would exceed ~40KB, drop the lowest-value sections first (commit subjects,
 then TODO samples, then tree depth) and note what was dropped.
 
-A **design** brief renders under a larger budget — **~90KB** — and sheds in a
+A **design** brief renders under a larger budget (**~90KB**) and sheds in a
 different order: the onboarding-shaped sections go first (directory tree, file
 inventory, TODO samples), the author's own reasoning last. Note what was
 dropped, as always.
@@ -211,23 +211,23 @@ dropped, as always.
 
 ### 3c. The `code` block (`opts.kind === "code"`)
 
-An **index of coordinates, not a copy of the code** — the authoring model has
+An **index of coordinates, not a copy of the code**: the authoring model has
 Read/Glob/Grep, so the useful thing to hand it is precise locations to open.
 
-- `imports[]` — external libraries actually imported (`{name, count, sites[]}`),
+- `imports[]`: external libraries actually imported (`{name, count, sites[]}`),
   collapsed to bare package roots, sorted by frequency. Usage is a different
   fact from a manifest declaration.
-- `localImports[]` — first-party modules by import count. Distinguishing these
+- `localImports[]`: first-party modules by import count. Distinguishing these
   matters: `from src.contract import ...` looks exactly like a third-party
   package until you notice `src/` is a directory in the repository.
-- `constructs[]` — teachable language constructs with a file:line for each
+- `constructs[]`: teachable language constructs with a file:line for each
   (`{label, count, sites[]}`). One file is a curiosity; thirty is house style.
-- `declaredNotImported[]` / `importedNotDeclared[]` — the gap between manifest
+- `declaredNotImported[]` / `importedNotDeclared[]`: the gap between manifest
   and reality, reported rather than smoothed over.
-- `hosts[]` — external services, **hostname only**. Paths and query strings are
+- `hosts[]`: external services, **hostname only**. Paths and query strings are
   never collected, because that is where credentials hide.
-- `envVars[]` — environment variable **names only**; no value is ever read.
-- `coverage` — files opened vs available, so absence is distinguishable from
+- `envVars[]`: environment variable **names only**; no value is ever read.
+- `coverage`: files opened vs available, so absence is distinguishable from
   "not scanned".
 
 Harvested inside the existing text scan (a regex sweep, no extra I/O) and only
@@ -237,7 +237,7 @@ whole subject.
 
 ---
 
-## 4. The generator — `lib/generate.js` (Agent D)
+## 4. The generator - `lib/generate.js` (Agent D)
 
 ```js
 export function claudeAvailable() -> {available: bool, version: string|null, path: string|null}
@@ -247,9 +247,9 @@ export function startGeneration(opts) -> Job      // returns immediately
 `opts`: `{ project, brief, kind, tier, model, audience, jobId, stagingPath }`.
 `kind` defaults to `"onboarding"` and selects the prompt builder: `authoringPrompt`
 (§7) for onboarding, `designPrompt` (§7b) for design. Everything else about the
-spawn is identical — same argv, same read-only tools, same validation.
+spawn is identical: same argv, same read-only tools, same validation.
 
-**Spawn contract** — `child_process.spawn`, argv array, never a shell string:
+**Spawn contract**: `child_process.spawn`, argv array, never a shell string:
 
 ```
 claude -p
@@ -263,14 +263,14 @@ claude -p
 
 The prompt (stdin or argv) is the authoring instruction plus the brief.
 - `cwd` is the **project directory**, so relative reads resolve naturally.
-- Do **not** pass `--bare` — it forces API-key auth and this user has none.
+- Do **not** pass `--bare`: it forces API-key auth and this user has none.
 - Env: pass through `process.env`; never inject secrets.
 - **Timeout 20 minutes**, then SIGTERM, then SIGKILL after 10s. A timed-out job
-  reports `failed` with a clear reason — never a partial file presented as done.
+  reports `failed` with a clear reason: never a partial file presented as done.
 - Parse `stream-json` line-delimited events; surface a readable progress line per
   event (`reading src/main.py`, `writing…`). Malformed lines are skipped, never
   fatal. The final `result` event carries `result`, `total_cost_usd`,
-  `duration_ms`, `is_error` — record all of them.
+  `duration_ms`, `is_error`: record all of them.
 - `stderr` is captured for diagnostics but is not failure on its own (hook
   warnings appear there routinely).
 
@@ -302,12 +302,12 @@ The prompt (stdin or argv) is the authoring instruction plus the brief.
 
 ---
 
-## 5. Job registry — `lib/jobs.js` (Agent D)
+## 5. Job registry - `lib/jobs.js` (Agent D)
 
 In-memory map plus an event emitter. `create`, `get`, `list`, `update`,
 `appendProgress`, `cancel` (kills the child), `subscribe(jobId, fn)`.
 Cap at 50 retained jobs, evicting oldest finished first. One in-flight job per
-project — a second request for the same project returns `409` with the running
+project: a second request for the same project returns `409` with the running
 job's id.
 
 ---
@@ -317,7 +317,7 @@ job's id.
 | Route | Behavior |
 |---|---|
 | `GET /api/forge/status` | `{ claude: {available, version}, tiers: ["template","authored"], defaultModel, runningJobs: [...] }` |
-| `POST /api/forge/generate` | Body `{ id, kind?, tier?, model?, audience? }` — `kind` is one of `onboarding` (default), `design`, `code`;. `kind` is `"onboarding"` (default) or `"design"`. Starts a job, returns the `Job` (202). `404` unknown project; `409` if one is already running for it; **`400` for `kind:"design"` with `tier:"template"` or `tier:"local"`** — the design kind requires the `authored` tier (§0), and the error says so rather than quietly downgrading. |
+| `POST /api/forge/generate` | Body `{ id, kind?, tier?, model?, audience? }`: `kind` is one of `onboarding` (default), `design`, `code`;. `kind` is `"onboarding"` (default) or `"design"`. Starts a job, returns the `Job` (202). `404` unknown project; `409` if one is already running for it; **`400` for `kind:"design"` with `tier:"template"` or `tier:"local"`**: the design kind requires the `authored` tier (§0), and the error says so rather than quietly downgrading. |
 | `GET /api/forge/job/:jobId` | The `Job`. |
 | `GET /api/forge/job/:jobId/stream` | SSE: `progress`, `done`, `failed` events. Same ping/cleanup discipline as `/api/stream`. |
 | `GET /api/forge/job/:jobId/preview` | Serves the staged HTML (`text/html`, `nosniff`). 404 until `done`. |
@@ -329,7 +329,7 @@ this codebase". Sanitize into the prompt as data, never as instructions.
 
 ---
 
-## 7. Art direction — `lib/house-style.js` (Agent F)
+## 7. Art direction - `lib/house-style.js` (Agent F)
 
 ```js
 export const HOUSE_STYLE       // the art-direction spec, as a string
@@ -339,13 +339,13 @@ export const DEFAULT_MODEL = 'claude-opus-5'
 ```
 
 **The look is drawn from the artifacts this user already writes** (see
-`~/coding_projects/ideas/blender-30-days.html` — read it before writing this
+`~/coding_projects/ideas/blender-30-days.html`: read it before writing this
 file). It is deliberately *not* the Ground Control dashboard's obsidian/ember chrome:
 an artifact is a standalone document the user may open on its own or share.
 
 Non-negotiables for the generated artifact:
 
-- **One self-contained `.html` file.** Inline `<style>`. No external anything —
+- **One self-contained `.html` file.** Inline `<style>`. No external anything:
   no CDN, no webfont, no remote image, no analytics, no `<script src>`. Small
   inline JS only if it genuinely earns its place (a collapsible section);
   the page must be fully readable with JS off.
@@ -367,7 +367,7 @@ The **authoring prompt** must demand a real document, and must be explicit that
 accuracy outranks polish:
 
 - Ground every claim in the brief or in files actually read. **If something is
-  unknown, say so** — an honest "this isn't documented anywhere; here's what the
+  unknown, say so**: an honest "this isn't documented anywhere; here's what the
   code implies" is worth more than a confident invention. Never invent a command,
   a file path, a dependency, or an architectural claim.
 - Build on the project's existing prose rather than restating it.
@@ -378,11 +378,11 @@ accuracy outranks polish:
   now, honestly, including what's unfinished; gotchas and landmines; and a
   concrete "if you're picking this up again, start here" section.
 - An empty or near-empty project gets a short honest stub, not padding.
-- Output **only** the HTML — no prose before or after, no markdown fence.
+- Output **only** the HTML: no prose before or after, no markdown fence.
 
 ---
 
-## 7b. The design document — `designPrompt` (Agent F)
+## 7b. The design document - `designPrompt` (Agent F)
 
 ```js
 export function designPrompt({ brief, project, audience }) -> string
@@ -394,7 +394,7 @@ on the `authored` tier (§0) and consumes the brief's `design` block (§3b).
 
 The design document answers **why**. The decisions this codebase embodies, the
 forces that produced them, the alternatives that were rejected and what rejecting
-them cost. Its reader wants to **learn** from this codebase, not operate it — so
+them cost. Its reader wants to **learn** from this codebase, not operate it, so
 how to install it, how to run it, and where the entry points are belong to the
 onboarding artifact and are not repeated here.
 
@@ -404,13 +404,13 @@ it is:
 
 | Class | Rule |
 |---|---|
-| **Stated** | The repository says why. Quote it and cite it — `path:line`, the commit, the design doc. The quotation *is* the claim; do not smooth a source's words into a motive it did not state. |
-| **Inferred** | The repository shows a decision but never explains it. Label the inference **as an inference, in the prose the reader sees** — "the code implies", "nobody wrote this down; the shape suggests" — and show the evidence it rests on, so the reader can disagree. |
+| **Stated** | The repository says why. Quote it and cite it: `path:line`, the commit, the design doc. The quotation *is* the claim; do not smooth a source's words into a motive it did not state. |
+| **Inferred** | The repository shows a decision but never explains it. Label the inference **as an inference, in the prose the reader sees** ("the code implies", "nobody wrote this down; the shape suggests") and show the evidence it rests on, so the reader can disagree. |
 | **Unknown** | Neither. Say so plainly. *"The 800ms timeout is not explained anywhere in the repository"* is a finding, and a useful one. |
 
 **Inventing a motive is the defining failure mode of this document.** It is worse
 than inventing a command. A fabricated command fails the first time someone runs
-it; a fabricated reason is **unfalsifiable** — it reads as authoritative, it
+it; a fabricated reason is **unfalsifiable**: it reads as authoritative, it
 survives review, and the next reader repeats it as fact. An honest "undocumented"
 beats a plausible story every time. A confident, well-written, invented rationale
 is the worst artifact Forge can produce.
@@ -425,13 +425,13 @@ Further requirements:
 - Undocumented constants are material, not filler. A magic number with no
   explanation is a decision whose reason was lost; reporting it is the document
   doing its job.
-- A project with no recorded reasoning gets a short honest document saying so —
+- A project with no recorded reasoning gets a short honest document saying so:
   never a reconstructed narrative.
-- Output **only** the HTML — no prose before or after, no markdown fence.
+- Output **only** the HTML: no prose before or after, no markdown fence.
 
 ---
 
-## 7c. The code breakdown — `codePrompt` (Agent F)
+## 7c. The code breakdown - `codePrompt` (Agent F)
 
 ```js
 export function codePrompt({ brief, project, audience }) -> string
@@ -443,7 +443,7 @@ the `code` block from §3c.
 Onboarding answers "how do I work in this?", the rationale document answers
 "why is it built this way?", and this answers "what am I actually looking at?"
 
-**Its defining failure mode is the invented code sample** — not an invented
+**Its defining failure mode is the invented code sample**: not an invented
 command, which fails loudly when run, and not an invented motive, which §7b
 guards against, but a snippet that *looks* like this codebase and does not
 exist in it. It teaches a false fact and survives review. So:
@@ -453,8 +453,8 @@ exist in it. It teaches a false fact and survives review. So:
   off as what is there, never an example from a library's own documentation.
 - A simplified form is allowed only when declared as such AND shown alongside
   the real one. Elisions are marked.
-- Libraries are described by what they do **here** — which functions, which
-  options, what is deliberately unused — never by what the package does in
+- Libraries are described by what they do **here** (which functions, which
+  options, what is deliberately unused), never by what the package does in
   general. Ordinary usage gets a line; surprising usage gets the space.
 - Environment variables appear by **name only**. No value is read or guessed.
 
@@ -463,7 +463,7 @@ page; "this code is plain and uses no unusual constructs" is a finding.
 
 ---
 
-## 8. Deterministic artifact — `lib/artifact-template.js` (Agent F)
+## 8. Deterministic artifact - `lib/artifact-template.js` (Agent F)
 
 ```js
 export function renderArtifact(brief, opts) -> string   // complete HTML document
@@ -475,7 +475,7 @@ equivalent, and none is to be built (§0). Include: title and one-line identity;
 (files, size, commits, languages, last activity); a language composition bar; a
 90-day commit heatmap; the document index; entry points and run commands; the
 directory map; recent commits; TODO samples; and an honest "what we could not
-determine automatically" note. Escape every interpolated value — repository
+determine automatically" note. Escape every interpolated value: repository
 content is untrusted.
 
 `lib/artifact-parts.js` holds the shared HTML/SVG builders (stat band,
@@ -490,14 +490,14 @@ On the project detail view, a **Forge** panel:
 
 - Primary action, labelled for the selected kind: **Create onboarding artifact**
   / **Create design document**. Disabled with an explanation when `claude` is
-  unavailable — for onboarding, offer the `template` tier instead, which always
+  unavailable: for onboarding, offer the `template` tier instead, which always
   works for that kind.
 - Controls before launching: kind (Onboarding / Design), tier (Authored /
   Data-only), model, and an optional one-line audience hint.
 - **Choosing Design restricts the tier control to Authored** and says why, rather
   than letting the user submit a request the server will reject with `400` (§0,
-  §6). When `claude` is unavailable, Design is disabled outright with its reason
-  — there is no data-only design artifact to offer.
+  §6). When `claude` is unavailable, Design is disabled outright with its reason:
+  there is no data-only design artifact to offer.
 - While running: a live progress log fed by the SSE stream, elapsed time, and a
   **Cancel** control. Reconnect with backoff if the stream drops. Navigating away
   and back must re-attach to the running job, not orphan it.
@@ -509,7 +509,7 @@ On the project detail view, a **Forge** panel:
   returns `409 exists`. On success, show where it was written and refresh the
   project so the new doc appears.
 - Failures render the reason plainly and offer Retry and Use data-only artifact.
-  For a failed **design** job, offer Retry only — data-only is not an option for
+  For a failed **design** job, offer Retry only: data-only is not an option for
   that kind, and must not be presented as one. Never show a spinner with no
   terminal state.
 

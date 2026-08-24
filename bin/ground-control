@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
-# Ground Control launcher — starts the dashboard and opens it in the browser.
+# Ground Control launcher: starts the dashboard and opens it in the browser.
 #
-#   ground-control                      watch the default root (~/coding_projects)
-#   ground-control ~/other/projects     watch a different folder
+#   ground-control                      watch the folders you have added
+#   ground-control ~/other/projects     also watch this folder, just for this run
 #   ground-control --port 8080          use a different port
+#   ground-control --config <file>      use a different source list
 #   ground-control --no-open            don't launch the browser
 #   ground-control --app                open GroundControl.app, the macOS application, instead
+#
+# Folders are added from the dashboard itself and remembered in
+# ~/.ground-control/sources.json, so a path here is a one-off, not a setting.
+# On a first run with no source list, ~/coding_projects is where it starts.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -20,12 +25,13 @@ while [ $# -gt 0 ]; do
       for app in "$HOME/Applications/GroundControl.app" "$HERE/GroundControl.app"; do
         if [ -d "$app" ]; then exec open "$app"; fi
       done
-      echo "ground-control: GroundControl.app has not been built — run ./build-app.sh --install" >&2
+      echo "ground-control: GroundControl.app has not been built: run ./build-app.sh --install" >&2
       exit 1 ;;
     --port|-p) ARGS+=(--port "$2"); shift 2 ;;
     --root)    ARGS+=(--root "$2"); shift 2 ;;
+    --config)  ARGS+=(--config "$2"); shift 2 ;;
     -h|--help)
-      sed -n '2,8p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0 ;;
     -*) ARGS+=("$1"); shift ;;
     *)  ARGS+=(--root "$1"); shift ;;

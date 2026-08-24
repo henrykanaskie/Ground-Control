@@ -3,7 +3,7 @@
     GroundControl.app icon: an eye drawn as a network, not an organism.
 
     The almond gives the "overseeing" read at a glance. Inside it, the iris is
-    a hub with six nodes wired to it — the thing being overseen is a system,
+    a hub with six nodes wired to it: the thing being overseen is a system,
     and one point commands all of it. Deliberately NOT a camera aperture:
     lens geometry makes a tool look like a photo app.
 
@@ -12,7 +12,7 @@
 
     32 px Dock constraints:
       · One dominant bright hub, so the icon reduces to "lit centre in a dark eye".
-      · Six nodes, not twelve — under 2 px each, more becomes mud.
+      · Six nodes, not twelve: under 2 px each, more becomes mud.
       · The almond is a filled dark well, not a hairline outline, so the eye
         shape survives even when the nodes stop resolving.
   -->
@@ -69,7 +69,7 @@
 
   <!--
     The interior is an irregular graph, on purpose. An evenly-spaced ring of
-    nodes around a centre reads as a sun or a flower, not a system — the first
+    nodes around a centre reads as a sun or a flower, not a system: the first
     version of this icon had exactly that problem. Varying the radii, the node
     sizes, and adding edges BETWEEN nodes (not only spokes to the hub) is what
     makes it read as an organised network being watched over.

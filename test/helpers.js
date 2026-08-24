@@ -2,7 +2,7 @@
  * Ground Control test helpers.
  *
  * Everything here builds throwaway fixtures under the OS temp directory.
- * NO TEST MAY EVER TOUCH ~/coding_projects — Reclaim moves folders to the
+ * NO TEST MAY EVER TOUCH ~/coding_projects: Reclaim moves folders to the
  * Trash, and a test pointed at a real root would be unrecoverable in the worst
  * case and confusing in the best.  `fixtureRoot()` is the only sanctioned way
  * to get a root, and it refuses to hand back a path outside tmp.
@@ -91,8 +91,14 @@ export function project(root, name, { files = { 'README.md': '# x\n' }, state = 
   return dir;
 }
 
-/** Start the real server on an ephemeral port against a fixture root. */
-export async function startServer(root) {
+/**
+ * Start the real server on an ephemeral port against a fixture root.
+ *
+ * `--config` points the source registry at a throwaway file inside the fixture
+ * so a test run never reads, and never writes, the developer's own
+ * ~/.ground-control/sources.json.
+ */
+export async function startServer(root, opts = {}) {
   const { spawn } = await import('node:child_process');
   const net = await import('node:net');
   const port = await new Promise((res, rej) => {
@@ -101,7 +107,10 @@ export async function startServer(root) {
     s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); });
   });
   const serverPath = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'server.js');
-  const child = spawn(process.execPath, [serverPath, '--port', String(port), '--root', root], {
+  const config = opts.config || path.join(fixtureRoot('config'), 'sources.json');
+  const args = [serverPath, '--port', String(port), '--config', config];
+  if (root) args.push('--root', root);
+  const child = spawn(process.execPath, args, {
     stdio: ['ignore', 'pipe', 'pipe'], detached: true,
   });
   const base = `http://127.0.0.1:${port}`;
@@ -112,12 +121,20 @@ export async function startServer(root) {
     await new Promise((r) => setTimeout(r, 120));
   }
   return {
-    base, port,
+    base, port, config,
     async get(p) { const r = await fetch(base + p); return { status: r.status, body: await r.text() }; },
     async json(p) { const r = await fetch(base + p); return r.json(); },
     async post(p, body) {
       const r = await fetch(base + p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}) });
       return { status: r.status, body: await r.text() };
+    },
+    async postJson(p, body) {
+      const r = await fetch(base + p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}) });
+      return { status: r.status, json: await r.json().catch(() => null) };
+    },
+    async del(p) {
+      const r = await fetch(base + p, { method: 'DELETE' });
+      return { status: r.status, json: await r.json().catch(() => null) };
     },
     stop() { try { process.kill(-child.pid, 'SIGKILL'); } catch { /* already gone */ } },
   };

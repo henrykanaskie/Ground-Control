@@ -1,6 +1,6 @@
 /**
  * Reclaim is the only destructive feature, so these are the tests that matter
- * most. Every fixture lives in the OS temp directory — see test/helpers.js.
+ * most. Every fixture lives in the OS temp directory: see test/helpers.js.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';

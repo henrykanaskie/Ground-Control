@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# build-app.sh — assemble GroundControl.app, a real macOS application around the
+# build-app.sh, assemble GroundControl.app, a real macOS application around the
 # dashboard that already lives in this repo.
 #
 #   ./build-app.sh              build ./GroundControl.app
@@ -57,8 +57,8 @@ if ! command -v swiftc >/dev/null 2>&1; then
 
   and then run ./build-app.sh again."
 fi
-command -v sips     >/dev/null 2>&1 || die "sips is missing (it ships with macOS) — cannot rasterise the icon."
-command -v iconutil >/dev/null 2>&1 || die "iconutil is missing (it ships with macOS) — cannot build the .icns."
+command -v sips     >/dev/null 2>&1 || die "sips is missing (it ships with macOS), cannot rasterise the icon."
+command -v iconutil >/dev/null 2>&1 || die "iconutil is missing (it ships with macOS), cannot build the .icns."
 
 for f in "$SRC/GroundControl.swift" "$SRC/Info.plist" "$SRC/icon.svg"; do
   [ -f "$f" ] || die "missing source file: ${f#$REPO/}"
@@ -91,7 +91,7 @@ swiftc -O \
   "$SRC/GroundControl.swift" \
   2> "$BUILD/swiftc.log" || {
     cat "$BUILD/swiftc.log" >&2
-    die "the Swift compile failed — see the errors above (full log: build/swiftc.log)."
+    die "the Swift compile failed, see the errors above (full log: build/swiftc.log)."
   }
 if [ -s "$BUILD/swiftc.log" ]; then
   note "compiler warnings in build/swiftc.log"
@@ -142,7 +142,7 @@ done
 rm -rf "$BUNDLE/Contents/Resources/.forge" \
        "$BUNDLE/Contents/Resources/node_modules"
 find "$BUNDLE/Contents/Resources" -name '.DS_Store' -delete 2>/dev/null || true
-note "$(printf '%s ' "${PAYLOAD[@]}")— $(du -sh "$BUNDLE/Contents/Resources" | cut -f1) total"
+note "$(printf '%s ' "${PAYLOAD[@]}")- $(du -sh "$BUNDLE/Contents/Resources" | cut -f1) total"
 
 # ── 5. register ──────────────────────────────────────────────────────────────
 
@@ -171,13 +171,13 @@ fi
 
 cat <<EOF
 
-  This app is unsigned and not notarised — there is no Developer ID here, and
+  This app is unsigned and not notarised, there is no Developer ID here, and
   faking one would be worse than saying so. What that means in practice:
 
   · Built on this Mac and left here, it carries no quarantine flag, so
     double-clicking it just works. Verified: it opens without a prompt.
-  · Move it anywhere that quarantines files — AirDrop, a download, a zip
-    pulled off the internet — and Gatekeeper will refuse the first open with
+  · Move it anywhere that quarantines files (AirDrop, a download, a zip
+    pulled off the internet) and Gatekeeper will refuse the first open with
     "Apple could not verify $APP_NAME". Once, on first launch only:
 
         right-click (or Control-click) $APP_NAME.app  ›  Open  ›  Open
