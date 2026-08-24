@@ -1,0 +1,8 @@
+node_modules/
+.DS_Store
+*.log
+.forge/
+
+# macOS app build artifacts (build-app.sh)
+*.app/
+build/

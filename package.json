@@ -1,0 +1,21 @@
+{
+  "name": "ground-control",
+  "version": "1.0.0",
+  "description": "A live dashboard over a folder of coding projects \u2014 status at a glance, onboarding docs one click away.",
+  "type": "module",
+  "bin": {
+    "ground-control": "./bin/ground-control"
+  },
+  "scripts": {
+    "start": "node server.js --open",
+    "serve": "node server.js",
+    "check": "node --check server.js && node --check lib/scan.js && node --check public/js/app.js && node --check public/js/markdown.js",
+    "test": "node --test test/*.test.js",
+    "test:watch": "node --test --watch test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "private": true,
+  "license": "MIT"
+}
