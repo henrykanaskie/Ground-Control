@@ -1,0 +1,631 @@
+/* ============================================================================
+ * ground-control/public/css/doc.css
+ * Document typography for rendered markdown.
+ *
+ * Scope: everything here is scoped to `.ground-control-doc` (the container that holds
+ * the output of `render()`) or `.ground-control-doc-toc` (the reader's table of
+ * contents). Nothing global is touched.
+ *
+ * The `--bg / --panel / --line / --text / --ember / ...` custom properties are
+ * defined by app.css on `:root`. This file only CONSUMES them. The `--tok-*`
+ * variables below are local to the document surface and are declared here
+ * because only this file emits the classes that use them.
+ *
+ * Horizontal-overflow rule: the page must never scroll sideways. Every wide
+ * construct (code blocks, tables) scrolls inside its own container, and prose
+ * breaks long unbroken tokens (URLs, paths) rather than pushing the layout.
+ * ========================================================================= */
+
+.ground-control-doc {
+  /* Syntax token palette: warm, ember-adjacent, with one cool anchor so code
+     reads as structured rather than decorated. Tuned for the obsidian panel. */
+  --tok-kw:      #ff9d76;
+  --tok-str:     #a7d49b;
+  --tok-com:     #737c8a;
+  --tok-num:     #f0b866;
+  --tok-fn:      #8fd0e8;
+  --tok-type:    #e5c07b;
+  --tok-builtin: #c3a6f0;
+  --tok-var:     #f2ab9b;
+  --tok-prop:    #9db8e8;
+  --tok-meta:    #d9b25f;
+  --tok-punc:    #98a0ac;
+  --tok-tag:     #ff9d76;
+  --tok-attr:    #c3a6f0;
+
+  --doc-measure: 72ch;
+  --doc-rule: color-mix(in srgb, var(--ember) 34%, transparent);
+
+  max-width: var(--doc-measure);
+  min-width: 0;
+  margin-inline: auto;
+  font-family: var(--sans);
+  font-size: 1.0625rem;
+  line-height: 1.7;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-variant-ligatures: common-ligatures;
+  /* Long paths and URLs wrap instead of widening the page. */
+  overflow-wrap: break-word;
+}
+
+.ground-control-doc ::selection {
+  background: color-mix(in srgb, var(--ember) 30%, transparent);
+  color: var(--text);
+}
+
+/* --------------------------------------------------------------------------
+ * Vertical rhythm
+ * ----------------------------------------------------------------------- */
+
+.ground-control-doc > :first-child { margin-top: 0; }
+.ground-control-doc > :last-child  { margin-bottom: 0; }
+
+.ground-control-doc p {
+  margin: 0 0 1.15em;
+}
+
+/* --------------------------------------------------------------------------
+ * Headings
+ * ----------------------------------------------------------------------- */
+
+.ground-control-doc h1,
+.ground-control-doc h2,
+.ground-control-doc h3,
+.ground-control-doc h4,
+.ground-control-doc h5,
+.ground-control-doc h6 {
+  position: relative;
+  color: var(--text);
+  font-weight: 600;
+  line-height: 1.25;
+  text-wrap: balance;
+  scroll-margin-top: 4.5rem;
+}
+
+.ground-control-doc h1 {
+  font-size: 2.1rem;
+  font-weight: 650;
+  letter-spacing: -0.022em;
+  margin: 1.4em 0 0.55em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--line);
+}
+
+.ground-control-doc h2 {
+  font-size: 1.5rem;
+  letter-spacing: -0.015em;
+  margin: 2.1em 0 0.7em;
+  padding-bottom: 0.32em;
+  border-bottom: 1px solid var(--line);
+}
+
+.ground-control-doc h3 {
+  font-size: 1.2rem;
+  letter-spacing: -0.008em;
+  margin: 2em 0 0.6em;
+}
+
+.ground-control-doc h4 {
+  font-size: 1.03rem;
+  margin: 1.9em 0 0.5em;
+}
+
+.ground-control-doc h5 {
+  font-size: 0.9rem;
+  margin: 1.8em 0 0.5em;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.ground-control-doc h6 {
+  font-size: 0.82rem;
+  margin: 1.8em 0 0.5em;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* A heading that is the jump target gets a brief ember marker. */
+.ground-control-doc h1:target,
+.ground-control-doc h2:target,
+.ground-control-doc h3:target,
+.ground-control-doc h4:target,
+.ground-control-doc h5:target,
+.ground-control-doc h6:target {
+  color: var(--ember);
+}
+
+/* Anchor affordance: hidden until the heading is hovered or the link focused. */
+.ground-control-doc .heading-anchor {
+  margin-left: 0.38em;
+  padding: 0 0.1em;
+  font-size: 0.78em;
+  font-weight: 400;
+  color: var(--ember);
+  text-decoration: none;
+  border: 0;
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+}
+
+.ground-control-doc h1:hover .heading-anchor,
+.ground-control-doc h2:hover .heading-anchor,
+.ground-control-doc h3:hover .heading-anchor,
+.ground-control-doc h4:hover .heading-anchor,
+.ground-control-doc h5:hover .heading-anchor,
+.ground-control-doc h6:hover .heading-anchor { opacity: 0.65; }
+
+.ground-control-doc .heading-anchor:hover,
+.ground-control-doc .heading-anchor:focus-visible { opacity: 1; }
+
+/* --------------------------------------------------------------------------
+ * Links
+ * ----------------------------------------------------------------------- */
+
+.ground-control-doc a {
+  color: var(--ember);
+  text-decoration: underline;
+  text-decoration-color: var(--doc-rule);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+  transition: color 140ms ease-out, text-decoration-color 140ms ease-out;
+}
+
+.ground-control-doc a:hover {
+  color: var(--ember);
+  text-decoration-color: var(--ember);
+}
+
+.ground-control-doc a:focus-visible,
+.ground-control-doc .task-checkbox:focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* External links get a hairline glyph so it is obvious they leave the app. */
+.ground-control-doc a[target="_blank"]::after {
+  content: "\2197";
+  display: inline-block;
+  margin-left: 0.15em;
+  font-size: 0.8em;
+  color: var(--text-3);
+  text-decoration: none;
+  vertical-align: baseline;
+}
+
+/* --------------------------------------------------------------------------
+ * Inline emphasis
+ * ----------------------------------------------------------------------- */
+
+.ground-control-doc strong { font-weight: 640; color: var(--text); }
+.ground-control-doc em     { font-style: italic; }
+.ground-control-doc del    { color: var(--text-3); text-decoration-thickness: 1px; }
+.ground-control-doc mark   { background: var(--ember-glow); color: var(--text); }
+
+/* --------------------------------------------------------------------------
+ * Code
+ * ----------------------------------------------------------------------- */
+
+/* Inline code: distinct, but quiet enough to sit inside a sentence. */
+.ground-control-doc code {
+  font-family: var(--mono);
+  font-size: 0.875em;
+  font-variant-ligatures: none;
+}
+
+.ground-control-doc :not(pre) > code {
+  padding: 0.12em 0.36em;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text);
+  white-space: break-spaces;
+}
+
+.ground-control-doc a > code { color: inherit; border-color: var(--doc-rule); }
+.ground-control-doc h1 > code,
+.ground-control-doc h2 > code,
+.ground-control-doc h3 > code,
+.ground-control-doc h4 > code { font-size: 0.9em; }
+
+/*
+ * Block code. `pre` is the frame (border, radius, language badge) and the
+ * inner `code` is the scroll container, so a very wide line scrolls under a
+ * badge that stays put and the page itself never moves.
+ */
+.ground-control-doc .md-pre {
+  position: relative;
+  margin: 1.6em 0;
+  padding: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.ground-control-doc .md-pre > code {
+  display: block;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.95rem 1.05rem;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  font-size: 0.855em;
+  line-height: 1.62;
+  color: var(--text);
+  white-space: pre;
+  tab-size: 4;
+}
+
+.ground-control-doc .md-pre[data-lang]::before {
+  content: attr(data-lang);
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 0.35em 0.8em 0.35em 1.6em;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  background: linear-gradient(to left, var(--panel) 68%, transparent);
+  pointer-events: none;
+}
+
+/*
+ * Scroll affordance for the two horizontally scrollable surfaces.
+ * The `local` layers are opaque panel-coloured covers pinned to the content
+ * box, so they scroll away and reveal the `scroll`-attached shadow only on the
+ * side that actually has more content off-screen. Pure CSS, no JS.
+ */
+.ground-control-doc .md-pre > code,
+.ground-control-doc .md-table-wrap {
+  background-image:
+    linear-gradient(to right, var(--panel) 40%, transparent),
+    linear-gradient(to left, var(--panel) 40%, transparent),
+    linear-gradient(to right, rgba(0, 0, 0, 0.42), transparent),
+    linear-gradient(to left, rgba(0, 0, 0, 0.42), transparent);
+  background-position: left center, right center, left center, right center;
+  background-size: 26px 100%, 26px 100%, 15px 100%, 15px 100%;
+  background-repeat: no-repeat;
+  background-attachment: local, local, scroll, scroll;
+}
+
+/* Thin, unobtrusive scrollbars inside code and tables. */
+.ground-control-doc .md-pre > code,
+.ground-control-doc .md-table-wrap {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+.ground-control-doc .md-pre > code::-webkit-scrollbar,
+.ground-control-doc .md-table-wrap::-webkit-scrollbar { height: 8px; }
+.ground-control-doc .md-pre > code::-webkit-scrollbar-thumb,
+.ground-control-doc .md-table-wrap::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border-radius: 4px;
+}
+.ground-control-doc .md-pre > code::-webkit-scrollbar-track,
+.ground-control-doc .md-table-wrap::-webkit-scrollbar-track { background: transparent; }
+
+/* Syntax tokens (emitted only for fenced blocks with a known language). */
+.ground-control-doc .tok-kw      { color: var(--tok-kw); }
+.ground-control-doc .tok-str     { color: var(--tok-str); }
+.ground-control-doc .tok-com     { color: var(--tok-com); font-style: italic; }
+.ground-control-doc .tok-num     { color: var(--tok-num); }
+.ground-control-doc .tok-fn      { color: var(--tok-fn); }
+.ground-control-doc .tok-type    { color: var(--tok-type); }
+.ground-control-doc .tok-builtin { color: var(--tok-builtin); }
+.ground-control-doc .tok-var     { color: var(--tok-var); }
+.ground-control-doc .tok-prop    { color: var(--tok-prop); }
+.ground-control-doc .tok-meta    { color: var(--tok-meta); }
+.ground-control-doc .tok-punc    { color: var(--tok-punc); }
+.ground-control-doc .tok-tag     { color: var(--tok-tag); }
+.ground-control-doc .tok-attr    { color: var(--tok-attr); }
+
+/* --------------------------------------------------------------------------
+ * Lists
+ * ----------------------------------------------------------------------- */
+
+.ground-control-doc ul,
+.ground-control-doc ol {
+  margin: 0 0 1.15em;
+  padding-left: 1.45em;
+}
+
+.ground-control-doc li { margin: 0.32em 0; }
+
+.ground-control-doc li::marker {
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.ground-control-doc ul li::marker { font-size: 0.9em; }
+
+/* Nested lists tuck in without doubling the vertical gap. */
+.ground-control-doc li > ul,
+.ground-control-doc li > ol {
+  margin: 0.35em 0 0.35em;
+}
+
+/* Loose lists: paragraphs inside items keep breathing room but not a full gap. */
+.ground-control-doc li > p { margin-bottom: 0.6em; }
+.ground-control-doc li > p:last-child { margin-bottom: 0; }
+.ground-control-doc li > .md-pre,
+.ground-control-doc li > .md-table-wrap { margin: 0.7em 0; }
+
+/* Task lists */
+.ground-control-doc li.task-list-item {
+  list-style: none;
+  margin-left: -1.35em;
+  padding-left: 0;
+}
+
+.ground-control-doc .task-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 0.95em;
+  height: 0.95em;
+  margin: 0 0.5em 0 0;
+  vertical-align: -0.1em;
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  cursor: default;
+}
+
+.ground-control-doc .task-checkbox:checked {
+  background: var(--ember);
+  border-color: var(--ember);
+  /* Inline SVG check mark — no external asset, no network request. */
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%230a0b0d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M2.5 6.2l2.3 2.3 4.7-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 82%;
+}
+
+.ground-control-doc li.task-list-item:has(.task-checkbox:checked) {
+  color: var(--text-2);
+}
+
+/* --------------------------------------------------------------------------
+ * Blockquotes
+ * ----------------------------------------------------------------------- */
+
+.ground-control-doc blockquote {
+  margin: 1.6em 0;
+  padding: 0.65em 1.1em;
+  color: var(--text-2);
+  border-left: 2px solid var(--ember);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--ember) 7%, transparent), transparent 55%);
+}
+
+.ground-control-doc blockquote > :first-child { margin-top: 0; }
+.ground-control-doc blockquote > :last-child  { margin-bottom: 0; }
+
+.ground-control-doc blockquote blockquote {
+  margin: 0.8em 0;
+  border-left-color: var(--line-2);
+  background: none;
+}
+
+.ground-control-doc blockquote h1,
+.ground-control-doc blockquote h2,
+.ground-control-doc blockquote h3,
+.ground-control-doc blockquote h4 { border-bottom: 0; padding-bottom: 0; }
+
+/* --------------------------------------------------------------------------
+ * Tables
+ * ----------------------------------------------------------------------- */
+
+.ground-control-doc .md-table-wrap {
+  margin: 1.6em 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.ground-control-doc .md-table {
+  width: 100%;
+  /* Natural width wins, so wide tables scroll in the wrapper above rather
+     than crushing their columns. */
+  min-width: max-content;
+  border-collapse: collapse;
+  font-size: 0.9em;
+  line-height: 1.55;
+}
+
+.ground-control-doc .md-table th,
+.ground-control-doc .md-table td {
+  padding: 0.55em 0.9em;
+  text-align: left;
+  vertical-align: top;
+}
+
+.ground-control-doc .md-table thead th {
+  position: relative;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 0.82em;
+  font-weight: 600;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.ground-control-doc .md-table tbody tr + tr > td {
+  border-top: 1px solid var(--line);
+}
+
+.ground-control-doc .md-table tbody tr {
+  transition: background-color 140ms ease-out;
+}
+
+.ground-control-doc .md-table tbody tr:hover {
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+
+.ground-control-doc .md-table td > code { white-space: pre; }
+
+.ground-control-doc .md-left   { text-align: left; }
+.ground-control-doc .md-center { text-align: center; }
+.ground-control-doc .md-right  { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* --------------------------------------------------------------------------
+ * Rules, images, misc
+ * ----------------------------------------------------------------------- */
+
+.ground-control-doc hr {
+  height: 1px;
+  margin: 2.6em 0;
+  border: 0;
+  background: linear-gradient(90deg, transparent, var(--line-2) 14%, var(--line-2) 86%, transparent);
+}
+
+.ground-control-doc img {
+  max-width: 100%;
+  height: auto;
+  margin: 1.4em 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+
+.ground-control-doc p > img { margin: 0.3em 0; vertical-align: middle; }
+
+/* An image whose URL failed the allowlist renders as its alt text. */
+.ground-control-doc .md-img-blocked {
+  color: var(--text-3);
+  font-style: italic;
+}
+
+.ground-control-doc .md-error {
+  padding: 0.8em 1em;
+  color: var(--text-2);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.ground-control-doc br { line-height: inherit; }
+
+.ground-control-doc kbd {
+  font-family: var(--mono);
+  font-size: 0.82em;
+  padding: 0.1em 0.4em;
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+}
+
+/* --------------------------------------------------------------------------
+ * Table of contents (built by the reader from `headings()`)
+ *
+ * Works with either markup shape:
+ *   <ul class="ground-control-doc-toc"><li><a data-level="2" href="#id">…</a></li></ul>
+ *   <ul class="ground-control-doc-toc"><li class="lvl-2"><a href="#id">…</a></li></ul>
+ * Mark the current section with `.is-active` or `aria-current="true"`.
+ * ----------------------------------------------------------------------- */
+
+.ground-control-doc-toc {
+  margin: 0;
+  padding: 0 0 0 1px;
+  list-style: none;
+  font-family: var(--sans);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  border-left: 1px solid var(--line);
+}
+
+.ground-control-doc-toc ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ground-control-doc-toc li { margin: 0; }
+
+.ground-control-doc-toc a {
+  display: block;
+  margin-left: -1px;
+  padding: 0.34em 0.9em;
+  color: var(--text-2);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  overflow-wrap: break-word;
+  transition: color 140ms ease-out, border-color 140ms ease-out;
+}
+
+.ground-control-doc-toc a:hover { color: var(--text); }
+
+.ground-control-doc-toc a:focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: -2px;
+}
+
+.ground-control-doc-toc a.is-active,
+.ground-control-doc-toc a[aria-current="true"],
+.ground-control-doc-toc a[aria-current="location"],
+.ground-control-doc-toc .is-active > a {
+  color: var(--ember);
+  border-left-color: var(--ember);
+}
+
+/* Level indentation — data attribute, class, or real nesting. */
+.ground-control-doc-toc [data-level="1"], .ground-control-doc-toc .lvl-1 > a, .ground-control-doc-toc a[data-level="1"] { padding-left: 0.9em; font-weight: 600; color: var(--text); }
+.ground-control-doc-toc [data-level="2"], .ground-control-doc-toc .lvl-2 > a, .ground-control-doc-toc a[data-level="2"] { padding-left: 0.9em; }
+.ground-control-doc-toc [data-level="3"], .ground-control-doc-toc .lvl-3 > a, .ground-control-doc-toc a[data-level="3"] { padding-left: 1.9em; }
+.ground-control-doc-toc [data-level="4"], .ground-control-doc-toc .lvl-4 > a, .ground-control-doc-toc a[data-level="4"] { padding-left: 2.9em; font-size: 0.95em; }
+.ground-control-doc-toc [data-level="5"], .ground-control-doc-toc .lvl-5 > a, .ground-control-doc-toc a[data-level="5"] { padding-left: 3.6em; font-size: 0.95em; }
+.ground-control-doc-toc [data-level="6"], .ground-control-doc-toc .lvl-6 > a, .ground-control-doc-toc a[data-level="6"] { padding-left: 4.2em; font-size: 0.95em; }
+
+.ground-control-doc-toc ul a { padding-left: 1.9em; }
+.ground-control-doc-toc ul ul a { padding-left: 2.9em; }
+.ground-control-doc-toc ul ul ul a { padding-left: 3.6em; }
+
+/* --------------------------------------------------------------------------
+ * Narrow viewports
+ * ----------------------------------------------------------------------- */
+
+@media (max-width: 640px) {
+  .ground-control-doc { font-size: 1rem; line-height: 1.65; }
+  .ground-control-doc h1 { font-size: 1.75rem; }
+  .ground-control-doc h2 { font-size: 1.34rem; }
+  .ground-control-doc h3 { font-size: 1.12rem; }
+  .ground-control-doc .md-pre > code { padding: 0.8em 0.85em; }
+  .ground-control-doc .md-table th,
+  .ground-control-doc .md-table td { padding: 0.45em 0.7em; }
+}
+
+@media print {
+  .ground-control-doc { max-width: none; color: #000; }
+  .ground-control-doc .heading-anchor { display: none; }
+}
+
+/* --------------------------------------------------------------------------
+ * Motion
+ * ----------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .ground-control-doc *,
+  .ground-control-doc *::before,
+  .ground-control-doc *::after,
+  .ground-control-doc-toc *,
+  .ground-control-doc-toc *::before,
+  .ground-control-doc-toc *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+  .ground-control-doc .heading-anchor { opacity: 0.4; }
+}

@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0a0b0d">
+<title>Ground Control</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%230a0b0d'/%3E%3Cpath d='M4 12s3.2-4.6 8-4.6S20 12 20 12s-3.2 4.6-8 4.6S4 12 4 12Z' fill='none' stroke='%23f59e0b' stroke-width='1.6'/%3E%3Ccircle cx='12' cy='12' r='1.9' fill='%23f59e0b'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/css/app.css">
+<link rel="stylesheet" href="/css/doc.css">
+<script type="module" src="/js/app.js"></script>
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<!-- ── icon sprite ─────────────────────────────────────────────────────── -->
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.6 12S6.4 5.9 12 5.9 21.4 12 21.4 12 17.6 18.1 12 18.1 2.6 12 2.6 12Z"/><circle cx="12" cy="12" r="2.6"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H7a1.6 1.6 0 0 0-1.6 1.6v14.8A1.6 1.6 0 0 0 7 21h10a1.6 1.6 0 0 0 1.6-1.6V7.6Z"/><path d="M14 3v4.6h4.6"/><path d="M8.6 12.5h6.8M8.6 16h4.6"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.2 6.6A1.4 1.4 0 0 1 4.6 5.2h4l1.8 2.2h7A1.4 1.4 0 0 1 18.8 8.8v8.6a1.4 1.4 0 0 1-1.4 1.4H4.6a1.4 1.4 0 0 1-1.4-1.4Z"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M13.6 3.2H7.4A1.5 1.5 0 0 0 5.9 4.7v14.6a1.5 1.5 0 0 0 1.5 1.5h9.2a1.5 1.5 0 0 0 1.5-1.5V7.6Z"/><path d="M13.6 3.2v4.4h4.5"/></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="7" cy="5.5" r="2.2"/><circle cx="7" cy="18.5" r="2.2"/><circle cx="17" cy="8.5" r="2.2"/><path d="M17 10.7c0 3.4-2.6 4.6-5.3 5.2-2 .45-4.7.9-4.7.9M7 7.7v8.6"/></symbol>
+  <symbol id="i-commit" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v5.8M12 15.2V21"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.2"/><path d="M15.4 15.4 20.5 20.5"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5 8 12l7 7"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4.6h5.4V10"/><path d="M19.4 4.6 11.2 12.8"/><path d="M17.8 14.4v4.2a1.5 1.5 0 0 1-1.5 1.5H5.4a1.5 1.5 0 0 1-1.5-1.5V7.7a1.5 1.5 0 0 1 1.5-1.5h4.2"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 5.6v5.1h-5.1"/><path d="M4 18.4v-5.1h5.1"/><path d="M6.1 9.4a6.6 6.6 0 0 1 10.9-2.5L20 10.7M4 13.3l3 3.8a6.6 6.6 0 0 0 10.9-2.5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.8v4.9M12 16.1h.01"/></symbol>
+  <symbol id="i-diff" viewBox="0 0 24 24"><path d="M7 3.6v16.8M3.6 7h6.8M13.6 16.4h6.8"/></symbol>
+  <symbol id="i-flask" viewBox="0 0 24 24"><path d="M9.6 3.4h4.8M10.6 3.4v6L5.6 17.6a2 2 0 0 0 1.7 3h9.4a2 2 0 0 0 1.7-3l-5-8.2v-6"/><path d="M8 14.6h8"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M4.8 12.6 9.6 17.4 19.2 6.6"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24"><path d="M8.6 8.4 4.4 12l4.2 3.6M15.4 8.4 19.6 12l-4.2 3.6M13.4 5.4l-2.8 13.2"/></symbol>
+  <symbol id="i-window" viewBox="0 0 24 24"><rect x="3.6" y="4.6" width="16.8" height="14.8" rx="1.6"/><path d="M3.6 9h16.8M6.6 6.8h.01M9 6.8h.01"/></symbol>
+  <symbol id="i-notebook" viewBox="0 0 24 24"><rect x="5.4" y="3.4" width="13.2" height="17.2" rx="1.6"/><path d="M9 3.4v17.2M11.8 8.2h4M11.8 12h4M11.8 15.8h2.4"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4.4 7h15.2M4.4 12h15.2M4.4 17h9"/></symbol>
+  <!-- Forge -->
+  <symbol id="i-compass" viewBox="0 0 24 24"><path d="M12 4.2a1.9 1.9 0 1 1 0 3.8 1.9 1.9 0 0 1 0-3.8z"/><path d="M11 7.8 5.6 20M13 7.8 18.4 20"/><path d="M8.9 14.2h6.2"/></symbol>
+  <symbol id="i-hammer" viewBox="0 0 24 24"><path d="M13.2 3.1 20.9 10.8l-2.9 2.9-7.7-7.7z"/><path d="M11.6 8.5 4.2 15.9a2.2 2.2 0 0 0 3.1 3.1l7.4-7.4"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3.2l1.9 5.1 5.1 1.9-5.1 1.9L12 17.2l-1.9-5.1L5 10.2l5.1-1.9Z"/><path d="M18.4 15.6l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7Z"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M12 3.6v10.2"/><path d="M8.2 10.4 12 14.2l3.8-3.8"/><path d="M4.6 16.4v2.2a1.8 1.8 0 0 0 1.8 1.8h11.2a1.8 1.8 0 0 0 1.8-1.8v-2.2"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6.2 6.2 17.8 17.8M17.8 6.2 6.2 17.8"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M12 7.2V12l3.2 1.9"/></symbol>
+  <!-- Workbench -->
+  <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M2.8 12h3.6l2.4-6.2 4.2 12.4 2.4-6.2h5.8"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6.6 9.4 12 14.8l5.4-5.4"/></symbol>
+  <symbol id="i-launch" viewBox="0 0 24 24"><path d="M13.6 4.4h6v6"/><path d="M19.6 4.4 10.9 13.1"/><path d="M17.2 13.6v4.8a1.6 1.6 0 0 1-1.6 1.6H5.6A1.6 1.6 0 0 1 4 18.4V8.4a1.6 1.6 0 0 1 1.6-1.6h4.8"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3.4" y="4.6" width="17.2" height="14.8" rx="1.6"/><path d="M7.6 9.6 10.6 12l-3 2.4M12.8 14.8h4"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6.6" y="6.6" width="10.8" height="10.8" rx="2"/><path d="M9.8 3.4v3.2M14.2 3.4v3.2M9.8 17.4v3.2M14.2 17.4v3.2M3.4 9.8h3.2M3.4 14.2h3.2M17.4 9.8h3.2M17.4 14.2h3.2"/></symbol>
+  <!-- Reclaim -->
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.4 6.8h15.2"/><path d="M9.4 6.8V5.2a1.4 1.4 0 0 1 1.4-1.4h2.4a1.4 1.4 0 0 1 1.4 1.4v1.6"/><path d="M6.6 6.8 7.5 19a1.6 1.6 0 0 0 1.6 1.5h5.8a1.6 1.6 0 0 0 1.6-1.5l.9-12.2"/><path d="M10.4 10.4v6M13.6 10.4v6"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.2 5.2 6v6c0 4.2 2.9 7.4 6.8 8.8 3.9-1.4 6.8-4.6 6.8-8.8V6Z"/><path d="M9.2 12.2l2 2 3.6-3.9"/></symbol>
+  <!-- review-for-removal: a folder drawn hollow. Deliberately NOT a trash can —
+       clicking Review deletes nothing; the trash can is reserved for the
+       destructive confirm so the two never look interchangeable. -->
+  <symbol id="i-hollow" viewBox="0 0 24 24"><path d="M3.2 6.6A1.4 1.4 0 0 1 4.6 5.2h4l1.8 2.2h7A1.4 1.4 0 0 1 18.8 8.8v8.6a1.4 1.4 0 0 1-1.4 1.4H4.6a1.4 1.4 0 0 1-1.4-1.4Z"/><path d="M7.4 14h9.2" stroke-dasharray="2.2 2.2" opacity=".85"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4.8" y="10.4" width="14.4" height="9.8" rx="1.8"/><path d="M8.2 10.4V7.6a3.8 3.8 0 0 1 7.6 0v2.8"/></symbol>
+</svg>
+
+<!-- ── header ──────────────────────────────────────────────────────────── -->
+<header class="topbar">
+  <div class="wrap topbar-in">
+    <a class="upnav" id="upnav" hidden>
+      <svg class="icon" aria-hidden="true"><use href="#i-back"></use></svg>
+    </a>
+    <a class="brand" href="#/" aria-label="Ground Control — all projects">
+      <svg class="icon brand-eye" aria-hidden="true"><use href="#i-eye"></use></svg>
+      <span class="brand-word">GROUND_CONTROL</span>
+    </a>
+
+    <div class="topbar-meta">
+      <span class="root-path mono" id="root-path" title="Scanned root"></span>
+      <span class="counts" id="hdr-counts"></span>
+    </div>
+
+    <div class="topbar-actions">
+      <span class="live" id="live" data-state="connecting">
+        <span class="live-dot" aria-hidden="true"></span>
+        <span class="live-label" id="live-label">connecting</span>
+      </span>
+      <!-- Workbench: quick switcher (CONTRACT-WORKBENCH.md §5) -->
+      <button class="btn btn-ghost wb-jump" id="wb-jump" type="button" title="Jump to a project (Cmd+K)">
+        <svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg>
+        <span>Jump</span>
+        <kbd class="wb-kbd">⌘K</kbd>
+      </button>
+      <button class="btn" id="rescan" type="button" title="Rescan the root directory">
+        <svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg>
+        <span>Rescan</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- ── non-fatal error banner ──────────────────────────────────────────── -->
+<div class="banner" id="banner" role="status" hidden>
+  <div class="wrap banner-in">
+    <svg class="icon" aria-hidden="true"><use href="#i-alert"></use></svg>
+    <span id="banner-text"></span>
+    <button class="btn btn-ghost btn-sm" id="banner-retry" type="button">Retry now</button>
+  </div>
+</div>
+
+<main id="main" class="wrap">
+
+  <!-- ── grid view ─────────────────────────────────────────────────────── -->
+  <section id="view-grid" class="view" aria-label="All projects">
+
+    <form class="controls" id="controls" role="search" autocomplete="off">
+      <div class="field field-search">
+        <svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg>
+        <input id="f-q" type="search" placeholder="Filter by name, stack, or description" aria-label="Filter projects">
+      </div>
+
+      <div class="chips" id="f-status" role="group" aria-label="Filter by status"></div>
+
+      <!-- Workbench: agent filter chip (CONTRACT-WORKBENCH.md §5) -->
+      <div class="chips" id="wb-chips" role="group" aria-label="Filter by agent activity"></div>
+
+      <div class="field field-select">
+        <label class="vh" for="f-stack">Filter by stack</label>
+        <select id="f-stack"><option value="">All stacks</option></select>
+      </div>
+
+      <div class="field field-select">
+        <label class="vh" for="f-sort">Sort</label>
+        <select id="f-sort">
+          <option value="activity">Last activity</option>
+          <option value="name">Name</option>
+          <option value="size">Size</option>
+          <option value="commits">Commits</option>
+          <!-- Workbench §5 -->
+          <option value="agent">Agent activity</option>
+        </select>
+      </div>
+
+      <button class="btn btn-ghost btn-sm" id="f-clear" type="button" hidden>Clear</button>
+    </form>
+
+    <p class="result-line" id="result-line"></p>
+
+    <!-- Reclaim: the one quiet affordance in the grid (CONTRACT-RECLAIM.md §6).
+         Filled in by app.js; individual cards never get a delete control. -->
+    <div id="rc-slot"></div>
+
+    <div class="grid" id="grid"></div>
+    <div class="grid" id="skeletons" aria-hidden="true"></div>
+
+    <div class="blank" id="grid-empty" hidden>
+      <svg class="icon blank-icon" aria-hidden="true"><use href="#i-search"></use></svg>
+      <h2>Nothing matches</h2>
+      <p id="grid-empty-text">No project matches the current filters.</p>
+      <button class="btn" id="grid-empty-clear" type="button">Clear filters</button>
+    </div>
+  </section>
+
+  <!-- ── detail view ───────────────────────────────────────────────────── -->
+  <section id="view-detail" class="view" aria-label="Project detail" hidden></section>
+
+  <!-- ── reader view ───────────────────────────────────────────────────── -->
+  <section id="view-reader" class="view" aria-label="Document reader" hidden></section>
+
+  <!-- ── reclaim view (CONTRACT-RECLAIM.md §6) ─────────────────────────── -->
+  <section id="view-reclaim" class="view" aria-label="Reclaim dead folders" hidden></section>
+
+</main>
+
+<footer class="foot wrap">
+  <span class="mono" id="foot-scan"></span>
+</footer>
+
+<div id="announcer" class="vh" aria-live="polite" aria-atomic="true"></div>
+
+<noscript>
+  <div class="wrap" style="padding:40px 0"><p>Ground Control needs JavaScript enabled.</p></div>
+</noscript>
+
+</body>
+</html>
