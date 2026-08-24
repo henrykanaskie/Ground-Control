@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    GroundControl.app icon: an eye drawn as a network, not an organism.
+
+    The almond gives the "overseeing" read at a glance. Inside it, the iris is
+    a hub with six nodes wired to it — the thing being overseen is a system,
+    and one point commands all of it. Deliberately NOT a camera aperture:
+    lens geometry makes a tool look like a photo app.
+
+    Palette from CONTRACT.md section 3 (bg #0a0b0d, line #252a32,
+    ember #f59e0b, ember-2 #d97706).
+
+    32 px Dock constraints:
+      · One dominant bright hub, so the icon reduces to "lit centre in a dark eye".
+      · Six nodes, not twelve — under 2 px each, more becomes mud.
+      · The almond is a filled dark well, not a hairline outline, so the eye
+        shape survives even when the nodes stop resolving.
+  -->
+  <defs>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#15181d"/>
+      <stop offset="0.55" stop-color="#0d0f12"/>
+      <stop offset="1" stop-color="#08090b"/>
+    </linearGradient>
+
+    <radialGradient id="hub" cx="0.5" cy="0.4" r="0.6">
+      <stop offset="0" stop-color="#fff4da"/>
+      <stop offset="0.3" stop-color="#fbbf24"/>
+      <stop offset="0.75" stop-color="#f59e0b"/>
+      <stop offset="1" stop-color="#d97706"/>
+    </radialGradient>
+
+    <radialGradient id="bleed" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#f59e0b" stop-opacity="0.5"/>
+      <stop offset="0.5" stop-color="#d97706" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#d97706" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- The socket the network sits in: darker than the plate so the almond reads. -->
+    <radialGradient id="well" cx="0.5" cy="0.45" r="0.7">
+      <stop offset="0" stop-color="#151a22"/>
+      <stop offset="1" stop-color="#0b0d11"/>
+    </radialGradient>
+
+    <clipPath id="almond">
+      <path d="M512 268 C724 268 878 420 926 512 C878 604 724 756 512 756
+               C300 756 146 604 98 512 C146 420 300 268 512 268 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- Plate -->
+  <rect x="76" y="76" width="872" height="872" rx="196" fill="url(#plate)"/>
+  <rect x="76" y="76" width="872" height="872" rx="196"
+        fill="none" stroke="#252a32" stroke-width="6"/>
+
+  <!-- The eye: a dark well, with heat rising out of the middle of it -->
+  <g clip-path="url(#almond)">
+    <rect x="76" y="76" width="872" height="872" fill="url(#well)"/>
+    <circle cx="512" cy="512" r="300" fill="url(#bleed)"/>
+  </g>
+
+  <!-- Almond rim -->
+  <path d="M512 268 C724 268 878 420 926 512 C878 604 724 756 512 756
+           C300 756 146 604 98 512 C146 420 300 268 512 268 Z"
+        fill="none" stroke="#4a5563" stroke-width="24"/>
+  <path d="M512 268 C724 268 878 420 926 512 C878 604 724 756 512 756
+           C300 756 146 604 98 512 C146 420 300 268 512 268 Z"
+        fill="none" stroke="#f59e0b" stroke-width="9" opacity="0.62"/>
+
+  <!--
+    The interior is an irregular graph, on purpose. An evenly-spaced ring of
+    nodes around a centre reads as a sun or a flower, not a system — the first
+    version of this icon had exactly that problem. Varying the radii, the node
+    sizes, and adding edges BETWEEN nodes (not only spokes to the hub) is what
+    makes it read as an organised network being watched over.
+  -->
+
+  <!-- Edges between nodes: the system has its own structure -->
+  <g stroke="#d97706" stroke-width="7" stroke-linecap="round" opacity="0.42">
+    <line x1="628" y1="432" x2="672" y2="548"/>
+    <line x1="404" y1="428" x2="498" y2="372"/>
+    <line x1="386" y1="572" x2="556" y2="628"/>
+  </g>
+
+  <!-- Spokes: the ground-control point reaches every part of it -->
+  <g stroke="#f59e0b" stroke-width="9" stroke-linecap="round" opacity="0.62">
+    <line x1="506" y1="508" x2="628" y2="432"/>
+    <line x1="506" y1="508" x2="672" y2="548"/>
+    <line x1="506" y1="508" x2="556" y2="628"/>
+    <line x1="506" y1="508" x2="386" y2="572"/>
+    <line x1="506" y1="508" x2="404" y2="428"/>
+    <line x1="506" y1="508" x2="498" y2="372"/>
+  </g>
+
+  <!-- Nodes: deliberately unequal, at unequal distances -->
+  <g fill="#fbbf24">
+    <circle cx="628" cy="432" r="30"/>
+    <circle cx="672" cy="548" r="25"/>
+    <circle cx="556" cy="628" r="26"/>
+    <circle cx="386" cy="572" r="26"/>
+    <circle cx="404" cy="428" r="30"/>
+    <circle cx="498" cy="372" r="24"/>
+  </g>
+
+  <!-- Hub: the ground-control point itself, brightest thing in the icon -->
+  <circle cx="506" cy="508" r="84" fill="url(#hub)"/>
+  <circle cx="506" cy="508" r="84" fill="none" stroke="#0a0b0d" stroke-width="11"/>
+  <ellipse cx="480" cy="480" rx="29" ry="19" fill="#ffffff" opacity="0.32"
+           transform="rotate(-28 480 480)"/>
+</svg>
