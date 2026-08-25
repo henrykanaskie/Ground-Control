@@ -149,3 +149,38 @@ test('turn state distinguishes a running tool from a finished reply', async () =
   assert.equal(turnStateOf([]), 'idle',
     'an empty transcript claims nothing');
 });
+
+test('an agent working in a subfolder is still found', async () => {
+  // Regression: Claude Code keys its transcript store on the SESSION'S cwd, so
+  // an agent working in `ideas/team_dispatch` writes to
+  // `-…-ideas-team-dispatch`, not `-…-ideas`. Resolving only the project root
+  // made that project's store look untouched, which parked it, which zeroed
+  // `live`, which meant the step that decides "working" never ran for it. An
+  // actively working agent was reported as parked — "it isn't finding agents
+  // in folders". The same failure hits a folder renamed mid-session.
+  const ag = await import('../lib/agents.js');
+
+  // Injected resolver: the encoding Claude Code uses, without depending on
+  // whatever happens to exist in ~/.claude/projects on this machine.
+  const encode = (p) => String(p).replace(/[/_.]/g, '-');
+
+  const project = '/Users/x/coding_projects/ideas';
+  const procs = [
+    { cwd: '/Users/x/coding_projects/ideas/team_dispatch' },
+    { cwd: '/Users/x/coding_projects/ideas' },
+  ];
+
+  const got = ag.transcriptDirsFor(project, procs, encode);
+  assert.equal(got.root, encode(project), 'the project root store is still resolved');
+  assert.ok(got.dirs.includes(encode('/Users/x/coding_projects/ideas/team_dispatch')),
+    "a live process's own subfolder store must be included");
+  assert.equal(got.dirs.length, 2, 'each distinct store appears exactly once');
+
+  // A project with no live processes still resolves its own store.
+  const bare = ag.transcriptDirsFor(project, [], encode);
+  assert.deepEqual(bare.dirs, [encode(project)]);
+
+  // A process whose cwd resolves to nothing must not poison the set.
+  const withNull = ag.transcriptDirsFor(project, [{ cwd: '/nope' }], () => null);
+  assert.deepEqual(withNull.dirs, [], 'unresolvable paths contribute nothing');
+});
