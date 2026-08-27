@@ -663,13 +663,13 @@ function fillCard(card, p) {
   /* metric row */
   const meta = h('div', 'card-meta');
   meta.append(metric('i-file', fmtNum(p.fileCount || 0), (p.fileCount || 0) + ' files'));
-  meta.append(metric('i-folder', fmtBytes(p.sizeBytes || 0), 'on disk'));
+  meta.append(metric('i-disk', fmtBytes(p.sizeBytes || 0), 'on disk'));
   if (p.git) {
     meta.append(metric('i-commit', fmtNum(p.git.commitCount || 0), 'commits on ' + (p.git.branch || 'HEAD')));
   } else if (p.status !== 'empty') {
     meta.append(metric('i-branch', 'no git', 'not a git repository'));
   }
-  if (p.todoCount > 0) meta.append(metric('i-check', p.todoCount + ' TODO', p.todoCount + ' TODO markers', 'is-todo'));
+  if (p.todoCount > 0) meta.append(metric('i-flag', p.todoCount + ' TODO', p.todoCount + ' TODO markers', 'is-todo'));
   if (p.git && p.git.dirty) {
     meta.append(metric('i-diff', (p.git.dirtyCount || 0) + ' dirty', 'uncommitted changes', 'is-dirty'));
   }
@@ -4963,7 +4963,7 @@ function srcTogglePanel() {
     const foot = h('div', 'src-panel-foot');
     const add = h('button', 'btn btn-primary');
     add.type = 'button';
-    add.append(icon('i-plus'), h('span', null, 'Add a folder'));
+    add.append(icon('i-folder-plus'), h('span', null, 'Add a folder'));
     add.addEventListener('click', () => { srcClosePanel(); srcOpenDialog(); });
     foot.append(add);
     panel.append(foot);
