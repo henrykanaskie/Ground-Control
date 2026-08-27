@@ -184,3 +184,46 @@ test('an agent working in a subfolder is still found', async () => {
   const withNull = ag.transcriptDirsFor(project, [{ cwd: '/nope' }], () => null);
   assert.deepEqual(withNull.dirs, [], 'unresolvable paths contribute nothing');
 });
+
+test('several agents in one folder are counted separately, not collapsed to one', async () => {
+  // Regression: two agents started in the SAME directory share one transcript
+  // store and write two session files into it. Turn detection read only the
+  // newest session per store, so `workingCount` could never exceed 1 and the
+  // card drew a single orbit no matter how many agents were running. The count
+  // has to come from as many sessions as there are live processes.
+  const ag = await import('../lib/agents.js');
+
+  const now = Date.now();
+  const mk = (id, ageMs) => ({ id, file: '/tmp/' + id + '.jsonl', mtimeMs: now - ageMs });
+  const store = {
+    '-Users-x-proj': [mk('a', 1000), mk('b', 4000), mk('c', 9000)],
+    '-Users-x-proj-sub': [mk('d', 2000)],
+  };
+  const sessions = (d) => store[d] || [];
+
+  const one = ag.turnCandidates(['-Users-x-proj'], 1, now, sessions);
+  assert.deepEqual(one.map((s) => s.id), ['a'],
+    'one live process still reads one session per store');
+
+  const three = ag.turnCandidates(['-Users-x-proj'], 3, now, sessions);
+  assert.deepEqual(three.map((s) => s.id), ['a', 'b', 'c'],
+    'three live processes in one folder must offer three sessions to count');
+
+  const both = ag.turnCandidates(['-Users-x-proj', '-Users-x-proj-sub'], 2, now, sessions);
+  assert.deepEqual(both.map((s) => s.id), ['a', 'd', 'b'],
+    'sessions from every store compete, newest first');
+
+  // A session silent past the stall window cannot be mid-turn, so it never
+  // costs a read: this is what stops an abandoned transcript adding an orbit.
+  const stale = { '-Users-x-proj': [mk('old', 60 * 60 * 1000), mk('fresh', 1000)] };
+  const kept = ag.turnCandidates(['-Users-x-proj'], 4, now, (d) => stale[d] || []);
+  assert.deepEqual(kept.map((s) => s.id), ['fresh'], 'stalled sessions are dropped, not read');
+
+  // The read budget is still bounded however many processes are running.
+  const many = Array.from({ length: 40 }, (_, i) => mk('s' + i, i * 10));
+  const capped = ag.turnCandidates(['-Users-x-proj'], 40, now, () => many);
+  assert.ok(capped.length <= 6, `tail reads must stay bounded, got ${capped.length}`);
+
+  // And a store that cannot be listed must not sink the sweep.
+  assert.deepEqual(ag.turnCandidates(['-boom'], 2, now, () => { throw new Error('x'); }), []);
+});

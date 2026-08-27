@@ -966,10 +966,15 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 .wb-orb.is-rev{animation-direction:reverse}
 .wb-orb circle{fill:var(--ember);stroke:none}
 /* Trailing satellites sit slightly back in depth so the cluster reads as a
-   volume rather than a flat ring. */
-.wb-core[data-n="3"] .wb-orb:nth-of-type(3) circle,
-.wb-core[data-n="4"] .wb-orb:nth-of-type(3) circle{opacity:.62}
-.wb-core[data-n="4"] .wb-orb:nth-of-type(4) circle{opacity:.42}
+   volume rather than a flat ring. Keyed on the satellite's own order, not on
+   data-n, so a five- or six-agent cluster fades the same way a three-agent one
+   does — and never so far that a dot stops being a dot: the count is the
+   information, and an invisible satellite is one agent the figure fails to
+   report. */
+.wb-core .wb-orb:nth-of-type(3) circle{opacity:.7}
+.wb-core .wb-orb:nth-of-type(4) circle{opacity:.6}
+.wb-core .wb-orb:nth-of-type(5) circle{opacity:.52}
+.wb-core .wb-orb:nth-of-type(6) circle{opacity:.46}
 
 /* Powered but not turning: the machine is there, nothing is moving through it. */
 .wb-core.is-open .wb-orbit{stroke:var(--text-3);opacity:.2}

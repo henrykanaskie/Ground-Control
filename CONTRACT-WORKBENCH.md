@@ -134,15 +134,19 @@ Reporting those as agents is the module's largest source of false positives.
 - Processes Forge itself spawned are excluded via `opts.excludePids`. Forge runs
   `claude` with its cwd inside the project it is documenting, so without this
   Ground Control detects itself and reports it as the user's work.
-- `active` (the orbit count) is `min(live, sessions written in the last 3
-  minutes)`, so it can never exceed the processes actually running.
+- `active` (the orbit count) is `min(live, sessions genuinely mid-turn)`, so it
+  can never exceed the processes actually running. Turn state, not recency, is
+  the signal (§3b above), and the sessions are counted **per session file, not
+  per store**: several agents started in the same folder share one transcript
+  directory, so reading only its newest session would report one agent when
+  three are working. Each agent that is mid-turn gets its own orbit.
 
 ### `Activity` (cheap: computed for every project on each scan)
 ```jsonc
 {
   "live": 2,                       // NON-parked agent processes whose cwd is in this project
   "parked": 7,                     // alive but silent past OPEN_WINDOW_MS, not agents (§3b)
-  "active": 2,                     // orbits drawn; min(live, sessions written in last 3 min)
+  "active": 2,                     // orbits drawn; min(live, sessions genuinely mid-turn)
   "processes": [                   // the evidence for the claim, and what /stop acts on
     { "pid": 16312, "origin": "vscode|desktop|cli|other", "uptimeMs": 0,
       "isSelf": false, "parked": true }
