@@ -2422,6 +2422,34 @@ function paintForgeElapsed(st) {
   st.els.elapsed.textContent = fmtElapsed(Date.now() - (st.startedMs || Date.now()));
 }
 
+/**
+ * How long the document is and what is in it besides paragraphs.
+ *
+ * Forge used to report only bytes, which tells a reader nothing about whether
+ * the thing is readable. Reading time plus the count of diagrams and decisions
+ * is the difference between "70 KB" and "a sixteen-minute wall of text", and
+ * the second is the one worth knowing before you open it.
+ */
+function shapeSentence(job) {
+  const s = job && job.shape;
+  if (!s || !s.words) return null;
+  const wrap = h('span', 'forge-tag');
+  const bits = [s.minutes + ' min read'];
+  if (s.diagrams) bits.push(s.diagrams === 1 ? '1 diagram' : s.diagrams + ' diagrams');
+  if (s.decisions) bits.push(s.decisions === 1 ? '1 decision' : s.decisions + ' decisions');
+  wrap.textContent = bits.join(' \u00b7 ');
+  if (!s.diagrams && !s.decisions) {
+    wrap.classList.add('is-thin');
+    wrap.title = 'This document has no diagrams and weighs no decisions. It reads as prose '
+      + 'all the way down; generating it again usually produces a better-shaped page.';
+  } else {
+    wrap.title = s.words + ' words in ' + s.paragraphs + ' paragraphs, '
+      + s.diagrams + ' diagram(s), ' + s.decisions + ' decision card(s), '
+      + s.reveals + ' reveal(s), ' + s.tables + ' table(s).';
+  }
+  return wrap;
+}
+
 function paintForgeMeta(st) {
   if (!st.els || !st.els.meta) return;
   const meta = st.els.meta;
@@ -2478,6 +2506,9 @@ function paintForgeDone(st, box) {
   if (job.model && job.tier !== 'template') facts.append(h('span', 'forge-tag', job.model));
   head.append(facts);
   box.append(head);
+
+  const shape = shapeSentence(job);
+  if (shape) facts.append(shape);
 
   const usage = usageSentence(job);
   if (usage) box.append(forgeNote('i-check', usage, 'is-quiet'));

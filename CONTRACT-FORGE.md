@@ -296,9 +296,44 @@ The prompt (stdin or argv) is the authoring instruction plus the brief.
   "bytes": 48210,
   "costUsd": 0.42, "durationMs": 91000,
   "error": null,
+  "shape": { "words": 3810, "minutes": 16, "paragraphs": 73, "diagrams": 2,
+             "decisions": 3, "reveals": 1, "folds": 2, "tables": 4,
+             "snippets": 5, "longestParagraph": 88, "longestProseRun": 3 },
   "suggestedFilename": "ONBOARDING.html"   // "DESIGN.html" when kind is "design"
 }
 ```
+
+### 4.6 Shape: the wall-of-text gate
+
+The prompts have asked for diagrams since the beginning, in the words "expected,
+not optional". A real generated artifact was then measured at **3810 words
+across 73 paragraphs, with zero diagrams, zero decision cards, zero folds and
+zero reveals**, and it shipped, because nothing counted. Asking harder is not a
+mechanism. Counting is.
+
+`measureShape(html)` runs on every finished artifact and records the structures
+whose absence turns a document into an unbroken column of prose. The report
+rides along on the job and is shown to the reader next to the size and the
+duration, because "16 min read, no diagrams" is a fact they can act on and
+"70 KB" is not.
+
+`validateShape(shape)` fails the job in exactly one case:
+
+> the document is **1500 words or more**, and has **no diagram at all**, and
+> **weighs no decision at all**.
+
+Everything about that bar is deliberate:
+
+- **Short documents are exempt.** The prompts ask for an honest stub when a
+  repository is thin, and a stub needs no diagram. Gating one would push the
+  model into padding, which is the failure this whole area exists to prevent.
+- **One diagram or one decision card is enough to pass.** This is not a style
+  score. A generation costs minutes of the user's subscription, and thin is the
+  author's call; only the total absence of both is a defect.
+- **The length of the longest unbroken prose run is reported but not gated.**
+  An earlier version of the rule required one, and the very document that
+  prompted this work passed it: its runs are only five paragraphs long, because
+  headings break them up. Headings do not make a wall of text readable.
 
 ---
 
@@ -335,6 +370,7 @@ this codebase". Sanitize into the prompt as data, never as instructions.
 export const HOUSE_STYLE       // the art-direction spec, as a string
 export function authoringPrompt({ brief, project, audience }) -> string   // kind "onboarding"
 export function designPrompt({ brief, project, audience }) -> string      // kind "design", §7b
+export function codePrompt({ brief, project, audience }) -> string        // kind "code", §7c
 export const DEFAULT_MODEL = 'claude-opus-5'
 ```
 
@@ -358,10 +394,18 @@ Non-negotiables for the generated artifact:
 - **Restraint**: one accent color used sparingly, hairline rules, generous
   whitespace, shadows no heavier than `0 1px 2px rgba(0,0,0,.06)`. No gradient
   soup, no neon, no emoji as UI chrome.
-- **Responsive**: relative units, `img {max-width:100%}`, wide code and tables
-  scroll inside their own `overflow-x:auto` container. The page body must never
-  scroll horizontally.
+- **Responsive**: relative units, `img {max-width:100%}`, wide code, tables and
+  diagrams scroll inside their own `overflow-x:auto` container. The page body
+  must never scroll horizontally.
 - Honor `@media (prefers-reduced-motion: reduce)` and `@media print`.
+- **Diagrams are expected, and are hand-authored inline SVG.** `figure.dia >
+  .diawrap > svg`, sized by `viewBox`, with a `<figcaption>` stating the claim
+  the picture makes and an `aria-label` carrying the same sentence. Shapes and
+  text take their colour from the `dbox` / `dline` / `dlabel` / `dsub` / `dedge`
+  / `dkicker` classes in the base stylesheet, never from literal hex: a
+  hard-coded colour is invisible in one of the two themes. No `<script>`,
+  `<style>` or `<foreignObject>` inside the SVG. Decorative icons are still
+  banned; a diagram earns its place by showing a mechanism prose cannot.
 
 The **authoring prompt** must demand a real document, and must be explicit that
 accuracy outranks polish:
@@ -374,11 +418,82 @@ accuracy outranks polish:
 - Required substance, adapted to what the project actually is: what this is in
   one paragraph and who it's for; why it exists / the core idea; how to run it
   (only commands evidenced in the repo); how it's put together, with real file
-  paths; the data or domain model where there is one; what state it's in right
-  now, honestly, including what's unfinished; gotchas and landmines; and a
+  paths **and an architecture diagram**; the data or domain model where there is
+  one; what state it's in right now, honestly, including what's unfinished;
+  gotchas and landmines; the tuning constants with what each protects; and a
   concrete "if you're picking this up again, start here" section.
-- An empty or near-empty project gets a short honest stub, not padding.
+- **It must teach the mechanism, not just inventory the parts.** Two to four of
+  the things the project actually does get explained properly: the question in
+  plain language, the obvious answer and why the code does something else, what
+  actually happens step by step (with a diagram where there are stages or
+  branches), and the transferable lesson. A section that names components and
+  their responsibilities without answering "but how does it do that?" has not
+  met this bar. The naive-approach move is evidence-bound like everything else:
+  where the repository shows no sign of what the simple version failed at, state
+  the contrast without inventing a history.
+- **Written for a reader who does not share the vocabulary.** Real term first,
+  then its meaning once in a clause, on first use only, never for terms every
+  developer knows. Where more than about six accumulate, a `ul.terms` glossary.
+  Assume intelligence, not knowledge.
+- An empty or near-empty project gets a short honest stub, not padding. The same
+  applies to diagrams: a project a sentence describes faster gets none.
 - Output **only** the HTML: no prose before or after, no markdown fence.
+
+---
+
+### 7a. Shared content policy: `DECISIONS`, `VOCABULARY` and `PREFLIGHT`
+
+Three blocks exported from `lib/house-style.js` and interpolated into **all
+three** prompts. They exist because the same defects appeared in every kind of
+document, and because guidance that lives in one prompt silently does not apply
+to the other two.
+
+**`DECISIONS`** answers the reader's actual question, which is not "what does it
+use" but "why that and not the other thing". Its whole mechanism is one
+distinction, and getting it wrong is what kept the trade-offs out:
+
+| | needs evidence from the repo | example |
+|---|---|---|
+| a **motive** (what a person was thinking) | **yes**, and without it, do not write it | "the author chose SQLite because they wanted zero-config deployment" |
+| a **trade-off** (what the technologies are) | **no**, it is true everywhere | "SQLite is a file, so there is no server to run; it gives up concurrent writers" |
+
+The second kind is *required*. The honest-evidence rule in `designPrompt` §"THE
+ONE RULE" had been quietly suppressing it: a model told never to speculate about
+reasons will also decline to say what a choice costs. That section now carries a
+fourth evidence category, **Analysis**, saying so explicitly. Removing it puts
+the documents back to being inventories, and `test/forge-shape.test.js` guards
+it by name.
+
+Decisions are written into the `.decide` card from the house style, whose slots
+(the question, the choice, the alternatives *with what each would have cost
+here*, what tipped it, and what it costs you) exist because prose lets a writer
+skip the alternatives without noticing and an empty slot does not.
+
+**`VOCABULARY`** is the "assume intelligence, do not assume vocabulary" rule:
+use the real term and then gloss it once in a clause, prefer the shorter word
+where it is just as precise, collect more than about six such terms into a
+`ul.terms` glossary, and never write "simply", "just", "obviously" or "of
+course". It had lived inline in `authoringPrompt` and nowhere else, which left
+the design and code documents free to assume the reader already knew every term
+they used. The reader who asks for a design document is precisely the reader who
+does not yet know why anyone would choose one of these things over another.
+
+**`PREFLIGHT`** is a count-before-you-emit checklist: how many diagrams, how many
+decision cards, the longest run of consecutive paragraphs, the longest
+paragraph, whether every section has a non-prose element. Every item in it was
+already stated in prose elsewhere in the prompts and was being missed anyway.
+Numbers are the difference between a hope and a defect the model can find in its
+own draft.
+
+Supporting these, the house style gained three components (`.decide`,
+`table.vs`, `details.guess`) and a **RHYTHM** section with countable rules:
+never more than three consecutive `<p>`, no paragraph past about 90 words, every
+section carrying at least one non-prose element.
+
+> `details.guess` is a predict-then-read block: the summary poses the question,
+> the body holds the answer. Pure `<details>`, no JavaScript, and open on paper.
+> A reader who has committed to a guess remembers the answer; one who scrolled
+> past a paragraph does not.
 
 ---
 

@@ -811,6 +811,9 @@ async function forgeStatus(res) {
 function forgeJobJSON(job) {
   const out = jobslib.toJSON(job);
   if (out && job && job.verification) out.verification = job.verification;
+  // The structural report (CONTRACT-FORGE.md §4.6). Shown to the reader
+  // because a document's shape is a fact about it they can act on.
+  if (out && job && job.shape) out.shape = job.shape;
   return out;
 }
 

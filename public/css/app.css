@@ -2004,3 +2004,7 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
   .cm-log{max-height:64vh}
   .cm-tab{max-width:140px}
 }
+
+/* A finished artifact that is all prose says so, quietly, where its size
+   and duration are reported (CONTRACT-FORGE.md §4.6). */
+.forge-tag.is-thin{border-color:#5a4218;color:#d3a45a}

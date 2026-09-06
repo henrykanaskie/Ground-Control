@@ -138,6 +138,40 @@ environment has `ANTHROPIC_API_KEY` deliberately stripped so a key in your shell
 can't silently move generation onto metered billing. The cost figure shown is a
 list-price equivalent, not a charge.
 
+### What the document has to do
+
+The point is not an inventory. A document that says "it stores sessions in
+SQLite" has told you a fact you could have got from the imports; one that says
+what SQLite buys here, what it costs here, and what Postgres or a JSON file
+would have done instead has taught you something you can take elsewhere. So
+every document is required to weigh its decisions, in a **decision card** with a
+slot for the alternatives and what each would have cost.
+
+That works because of one distinction. A *motive* is a claim about what a person
+was thinking ("the author chose SQLite because they wanted zero-config
+deployment"), and without a comment or a commit saying so, Forge will not write
+it. A *trade-off* is a claim about what the technologies are ("SQLite is a file,
+so there is no server to run; it gives up concurrent writers"), which needs no
+evidence from your repository because it is true everywhere. The second is the
+part readers want, and it was going missing because the rule against inventing
+reasons had been over-applied into silence.
+
+The other half is shape. Documents kept coming out as unbroken columns of
+paragraphs, so the house style now carries countable rules (never more than
+three consecutive paragraphs, none longer than about 90 words, every section
+carrying something that is not prose) and three components that hold the
+content: the decision card, an option comparison table, and a **predict-then-read
+block** that poses a question and hides the answer behind a `<details>` until
+you have made a guess.
+
+And Forge now counts. Every finished artifact is measured (words, reading time,
+diagrams, decision cards, folds, reveals, longest paragraph, longest unbroken
+run of prose), the numbers are shown next to its size, and a document of 1500
+words or more with **no diagram and no decision anywhere in it** is refused
+rather than staged. The prompts had asked for diagrams since the beginning; a
+real artifact still came out at 3810 words with zero. Asking harder is not a
+mechanism.
+
 Generated artifacts go to a `.forge/` staging area. **Saving into a project is a
 separate, explicitly confirmed action**, and it refuses to overwrite an existing
 file without a second confirmation.
