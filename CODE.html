@@ -1,0 +1,1658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reading Ground Control</title>
+<style>
+:root{
+  --ground:#F6F7F9; --surface:#FFFFFF; --surface-2:#ECEFF3; --surface-3:#E2E7EE;
+  --ink:#161B22; --ink-2:#4B5563; --ink-3:#8A94A3;
+  --rule:#DCE1E8; --rule-2:#C2C9D4;
+  --accent:#3B4F8C; --accent-soft:#E3E8F5; --accent-line:#B9C4E4;
+  --good:#2C6A52; --good-soft:#E0EDE7;
+  --warn:#9C5A22; --warn-soft:#F6EADB;
+  --c1:#3B4F8C; --c2:#5C71AC; --c3:#8193C6; --c4:#A6B3D9; --c5:#C6CEE7; --c6:#DEE3F1;
+  --h0:#E7EAEF; --h1:#C9D2E9; --h2:#9AAAD6; --h3:#6A80BA; --h4:#3B4F8C;
+  --shadow:0 1px 2px rgba(22,27,34,.05),0 6px 16px -8px rgba(22,27,34,.12);
+  --display:Georgia,'Iowan Old Style','Times New Roman',serif;
+  --body:system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;
+  --measure:72ch;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#0F1319; --surface:#171C24; --surface-2:#1F262F; --surface-3:#28303A;
+  --ink:#EAEEF4; --ink-2:#AAB4C2; --ink-3:#79838F;
+  --rule:#28303A; --rule-2:#39424E;
+  --accent:#9CB0E8; --accent-soft:#1C2436; --accent-line:#33405F;
+  --good:#7FC4A6; --good-soft:#182A24;
+  --warn:#D8975A; --warn-soft:#2E2418;
+  --c1:#9CB0E8; --c2:#7C90C9; --c3:#6172A6; --c4:#4B5880; --c5:#3A445F; --c6:#2C3346;
+  --h0:#1E252F; --h1:#2E3B55; --h2:#47598A; --h3:#6E85C4; --h4:#9CB0E8;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 16px -8px rgba(0,0,0,.5);
+}}
+:root[data-theme="dark"]{
+  --ground:#0F1319; --surface:#171C24; --surface-2:#1F262F; --surface-3:#28303A;
+  --ink:#EAEEF4; --ink-2:#AAB4C2; --ink-3:#79838F;
+  --rule:#28303A; --rule-2:#39424E;
+  --accent:#9CB0E8; --accent-soft:#1C2436; --accent-line:#33405F;
+  --good:#7FC4A6; --good-soft:#182A24;
+  --warn:#D8975A; --warn-soft:#2E2418;
+  --c1:#9CB0E8; --c2:#7C90C9; --c3:#6172A6; --c4:#4B5880; --c5:#3A445F; --c6:#2C3346;
+  --h0:#1E252F; --h1:#2E3B55; --h2:#47598A; --h3:#6E85C4; --h4:#9CB0E8;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 16px -8px rgba(0,0,0,.5);
+}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--body);
+  font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;
+  overflow-x:hidden}
+img{max-width:100%;height:auto}
+a{color:var(--accent);text-underline-offset:2px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+
+/* Only the horizontal padding lives here, so an element can be BOTH the
+   centred column and carry its own vertical rhythm (main, .mast-in) without
+   the shorthand wiping it out. */
+.wrap{max-width:820px;margin:0 auto;padding-left:22px;padding-right:22px}
+
+/* --- masthead ------------------------------------------------------ */
+header.mast{background:var(--surface);border-bottom:1px solid var(--rule)}
+.mast-in{padding-top:44px;padding-bottom:30px;display:flex;flex-direction:column;gap:18px}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--accent);margin:0}
+h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,5.4vw,46px);
+  line-height:1.05;margin:0;letter-spacing:-.015em;text-wrap:balance;
+  overflow-wrap:anywhere}
+.standfirst{font-size:17px;color:var(--ink-2);margin:0;max-width:64ch;line-height:1.5}
+
+/* --- stat band ----------------------------------------------------- */
+.strip{display:flex;flex-wrap:wrap;border:1px solid var(--rule);border-radius:4px;
+  overflow:hidden;margin:0}
+.cell{flex:1 1 128px;padding:11px 14px;border-right:1px solid var(--rule);
+  border-top:1px solid var(--rule);background:var(--surface);margin-top:-1px}
+.cell:last-child{border-right:none}
+.cell dt{font-family:var(--mono);font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);margin:0 0 3px}
+.cell dd{margin:0;font-size:14.5px;font-weight:600;font-variant-numeric:tabular-nums;
+  overflow-wrap:anywhere}
+.cell dd .unit{font-weight:400;color:var(--ink-3);font-size:12.5px}
+
+/* --- callouts ------------------------------------------------------ */
+.callout{background:var(--accent-soft);border-radius:4px;padding:15px 17px;
+  display:flex;flex-direction:column;gap:8px}
+.callout h2{font-family:var(--mono);font-size:10px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--accent);margin:0;font-weight:600}
+.callout p{margin:0;font-size:14.5px;line-height:1.55;color:var(--ink-2)}
+.callout p strong{color:var(--ink);font-weight:600}
+.callout.plain{background:var(--surface-2)}
+.callout.plain h2{color:var(--ink-3)}
+.callout.warnish{background:var(--warn-soft)}
+.callout.warnish h2{color:var(--warn)}
+
+/* --- sections ------------------------------------------------------ */
+main{padding-top:34px;padding-bottom:56px}
+section{margin-bottom:40px}
+section:last-child{margin-bottom:0}
+h2.sec{font-family:var(--display);font-weight:400;font-size:27px;margin:0 0 4px;
+  line-height:1.2;letter-spacing:-.01em;text-wrap:balance}
+p.seclabel{font-family:var(--mono);font-size:11px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);margin:0 0 16px}
+h3{font-family:var(--display);font-weight:400;font-size:20px;margin:28px 0 9px;
+  line-height:1.25;letter-spacing:-.005em}
+p.body{font-size:15.5px;color:var(--ink-2);max-width:var(--measure);margin:0 0 13px}
+p.body:last-child{margin-bottom:0}
+p.body strong{color:var(--ink);font-weight:600}
+p.note{font-size:13.5px;color:var(--ink-3);max-width:var(--measure);margin:11px 0 0;
+  line-height:1.5}
+ul.body,ol.body{font-size:15.5px;color:var(--ink-2);max-width:var(--measure);
+  margin:0 0 13px;padding-left:20px;display:flex;flex-direction:column;gap:7px}
+ul.body strong,ol.body strong{color:var(--ink);font-weight:600}
+.rule{border:0;border-top:1px solid var(--rule);margin:34px 0}
+.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+code,.path{font-family:var(--mono);font-size:.88em;background:var(--surface-2);
+  padding:1px 5px;border-radius:2px;overflow-wrap:anywhere}
+pre{font-family:var(--mono);font-size:13px;line-height:1.55;background:var(--surface-2);
+  border:1px solid var(--rule);border-radius:4px;padding:12px 14px;margin:0 0 13px;
+  overflow-x:auto}
+pre code{background:none;padding:0;font-size:inherit}
+
+/* --- code figures ---------------------------------------------------
+   A bare stack of <pre> blocks reads as a text file. A snippet that matters
+   gets a frame: where it came from above it, what to take from it below. */
+figure.snip{margin:0 0 16px;border:1px solid var(--rule);border-radius:4px;
+  background:var(--surface);overflow:hidden;break-inside:avoid}
+figure.snip figcaption{display:flex;align-items:baseline;gap:10px;
+  padding:7px 12px;background:var(--surface-2);
+  border-bottom:1px solid var(--rule);
+  font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+figure.snip figcaption .f{color:var(--accent);overflow-wrap:anywhere}
+figure.snip figcaption .t{margin-left:auto;font-size:10px;letter-spacing:.09em;
+  text-transform:uppercase;white-space:nowrap}
+figure.snip pre{margin:0;border:0;border-radius:0;background:var(--surface)}
+figure.snip .why{padding:10px 13px 12px;border-top:1px solid var(--rule);
+  font-size:14.5px;line-height:1.55;color:var(--ink-2)}
+figure.snip .why b{color:var(--ink);font-weight:600}
+/* Point at the exact token under discussion, inside the code itself. */
+pre mark,code mark{background:var(--accent-soft);color:var(--ink);
+  border-radius:2px;padding:0 3px;box-shadow:inset 0 -1px 0 var(--accent-line)}
+
+/* --- diagrams --------------------------------------------------------
+   A hand-authored inline SVG showing a mechanism: how a request moves, what
+   talks to what, what state a thing passes through. The shapes take their
+   colours from the token palette through the classes below rather than
+   carrying literal hex values, so a diagram themes with the document instead
+   of going invisible on the other ground. Wide figures scroll inside
+   .diawrap; the page body never does. */
+figure.dia{margin:0 0 16px;border:1px solid var(--rule);border-radius:4px;
+  background:var(--surface);overflow:hidden;break-inside:avoid}
+.diawrap{overflow-x:auto;padding:16px 14px;-webkit-overflow-scrolling:touch}
+figure.dia svg{display:block;width:100%;height:auto;min-width:460px}
+figure.dia figcaption{padding:10px 13px 12px;border-top:1px solid var(--rule);
+  font-size:14.5px;line-height:1.55;color:var(--ink-2)}
+figure.dia figcaption b{color:var(--ink);font-weight:600}
+
+/* Diagram parts. dbox is a plain node, dbox.a the one under discussion;
+   dline an edge, dline.a the edge the argument turns on. */
+figure.dia .dbox{fill:var(--surface-2);stroke:var(--rule-2);stroke-width:1}
+figure.dia .dbox.a{fill:var(--accent-soft);stroke:var(--accent-line)}
+figure.dia .dbox.q{fill:var(--surface);stroke:var(--rule-2);stroke-dasharray:3 3}
+figure.dia .dline{fill:none;stroke:var(--rule-2);stroke-width:1.2}
+figure.dia .dline.a{stroke:var(--accent);stroke-width:1.4}
+figure.dia .dline.soft{stroke:var(--rule-2);stroke-dasharray:3 3;stroke-width:1.1}
+figure.dia marker path{fill:var(--rule-2)}
+figure.dia marker.a path{fill:var(--accent)}
+figure.dia .dlabel{font-family:var(--mono);font-size:11.5px;fill:var(--ink)}
+figure.dia .dsub{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}
+figure.dia .dedge{font-family:var(--mono);font-size:9.5px;fill:var(--ink-3)}
+figure.dia .dkicker{font-family:var(--mono);font-size:10px;letter-spacing:.12em;
+  fill:var(--ink-3)}
+figure.dia .dlabel.a,figure.dia .dedge.a,figure.dia .dkicker.a{fill:var(--accent)}
+figure.dia .dgood{fill:var(--good)}
+figure.dia .dwarn{fill:var(--warn)}
+
+/* --- the decision card -----------------------------------------------
+   The single most requested thing from these documents: not what was built,
+   but what was chosen, against what, and what the choice costs. Prose can
+   carry that, but prose lets a writer skip the alternatives without noticing.
+   A card with an empty alternatives list is visibly unfinished, which is the
+   point: the structure is what makes the omission obvious. */
+.decide{margin:0 0 18px;border:1px solid var(--rule);border-left:2px solid var(--accent);
+  border-radius:4px;background:var(--surface);overflow:hidden;break-inside:avoid}
+.decide>.dq{margin:0;padding:12px 15px 10px;font-family:var(--display);
+  font-size:17px;line-height:1.35;color:var(--ink);border-bottom:1px solid var(--rule)}
+.decide .drow{padding:11px 15px;border-bottom:1px solid var(--rule)}
+.decide .drow:last-child{border-bottom:0}
+.decide .dk{display:block;margin-bottom:3px;font-family:var(--mono);font-size:9.5px;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.decide .drow.pick .dk{color:var(--accent)}
+.decide .drow p{margin:0;font-size:14.5px;line-height:1.6;color:var(--ink-2)}
+.decide .drow p strong{color:var(--ink);font-weight:600}
+.decide ul.dalts{margin:0;padding:0;list-style:none}
+.decide ul.dalts li{padding:7px 0 0;font-size:14px;line-height:1.55;color:var(--ink-2)}
+.decide ul.dalts li:first-child{padding-top:2px}
+.decide ul.dalts .da{font-family:var(--mono);font-size:12px;color:var(--ink);
+  font-weight:600}
+.decide ul.dalts .da::after{content:": ";color:var(--ink-3);font-weight:400}
+.decide .drow.bill{background:var(--surface-2)}
+.decide .drow.bill .dk{color:var(--warn)}
+
+/* --- option comparison ----------------------------------------------- */
+table.vs th.pick,table.vs td.pick{background:var(--accent-soft)}
+table.vs th.pick{color:var(--accent)}
+table.vs td.pick{color:var(--ink)}
+table.vs td .mark{font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+
+/* --- predict, then read ----------------------------------------------
+   A reader who has committed to a guess remembers the answer; a reader
+   scrolling past a paragraph does not. Pure <details>: no JavaScript, and
+   with JS disabled or in print the answer is simply visible. */
+details.guess{margin:0 0 18px;border:1px dashed var(--rule-2);border-radius:4px;
+  background:var(--surface);break-inside:avoid}
+details.guess>summary{padding:12px 15px;cursor:pointer;list-style:none;
+  font-family:var(--display);font-size:16px;line-height:1.4;color:var(--ink)}
+details.guess>summary::-webkit-details-marker{display:none}
+details.guess>summary::before{content:"Before you read on";display:block;
+  margin-bottom:4px;font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--accent)}
+details.guess>summary::after{content:"Reveal the answer";display:block;
+  margin-top:7px;font-family:var(--mono);font-size:10.5px;color:var(--ink-3)}
+details.guess[open]>summary::after{content:""}
+details.guess>summary:hover{background:var(--surface-2)}
+details.guess>summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+details.guess .gbody{padding:0 15px 13px;border-top:1px solid var(--rule)}
+details.guess .gbody>*:first-child{margin-top:11px}
+details.guess .gbody p{font-size:14.5px;line-height:1.65;color:var(--ink-2)}
+
+/* --- term grid -------------------------------------------------------
+   For a glossary of constructs or an API surface: many short entries that
+   would be a dozen thin sections if each got a heading of its own. */
+ul.terms{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));
+  gap:10px;margin:0 0 14px;padding:0;list-style:none}
+ul.terms > li{border:1px solid var(--rule);border-radius:4px;
+  padding:10px 12px;background:var(--surface);break-inside:avoid}
+ul.terms .t{display:block;margin-bottom:5px;font-family:var(--mono);
+  font-size:11.5px;letter-spacing:.02em;color:var(--accent);
+  overflow-wrap:anywhere}
+ul.terms .d{font-size:13.5px;line-height:1.5;color:var(--ink-2)}
+ul.terms .w{display:block;margin-top:6px;font-family:var(--mono);font-size:11px;
+  color:var(--ink-3);overflow-wrap:anywhere}
+
+/* --- tables -------------------------------------------------------- */
+.tw{overflow-x:auto;border:1px solid var(--rule);border-radius:4px;
+  background:var(--surface);margin:0 0 6px;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;font-size:14px;margin:0}
+th,td{text-align:left;padding:9px 13px;border-bottom:1px solid var(--rule);
+  vertical-align:top}
+th{font-family:var(--mono);font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-3);font-weight:600;background:var(--surface-2);white-space:nowrap}
+tr:last-child td{border-bottom:none}
+td b{color:var(--ink);font-weight:600}
+td .path,td code{background:none;padding:0}
+td.n{font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--ink-2)}
+td.m{font-family:var(--mono);font-size:12.5px;overflow-wrap:anywhere}
+td.sub{color:var(--ink-3);font-size:13px}
+td .sub{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);margin-top:2px;
+  overflow-wrap:anywhere}
+
+/* --- pills --------------------------------------------------------- */
+.pills{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 4px;padding:0;list-style:none}
+.pill{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+  padding:3px 8px;border-radius:2px;background:var(--surface-2);color:var(--ink-2);
+  white-space:nowrap}
+.pill.ok{background:var(--good-soft);color:var(--good)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.accent{background:var(--accent-soft);color:var(--accent)}
+
+/* --- composition bar ----------------------------------------------- */
+.comp{display:flex;flex-direction:column;gap:11px}
+.compbar{display:flex;width:100%;height:12px;border-radius:2px;overflow:hidden;
+  background:var(--surface-2);border:1px solid var(--rule)}
+.compbar span{display:block;height:100%;min-width:1px}
+.compbar span+span{box-shadow:inset 1px 0 0 var(--surface)}
+.complegend{display:flex;flex-wrap:wrap;gap:6px 18px;margin:0;padding:0;list-style:none}
+.complegend li{display:flex;align-items:baseline;gap:7px;font-size:13.5px;color:var(--ink-2)}
+.sw{width:9px;height:9px;border-radius:2px;flex:none;transform:translateY(-1px)}
+.complegend b{color:var(--ink);font-weight:600}
+.complegend .n{font-family:var(--mono);font-size:12px;color:var(--ink-3);
+  font-variant-numeric:tabular-nums}
+
+/* --- heatmap ------------------------------------------------------- */
+.heat{display:flex;flex-direction:column;gap:10px}
+.heatscroll{overflow-x:auto;padding-bottom:2px;-webkit-overflow-scrolling:touch}
+.heatscroll svg{display:block}
+.heatfoot{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ink-3)}
+.scale{display:flex;align-items:center;gap:4px}
+.scale i{width:10px;height:10px;border-radius:2px;display:block}
+
+/* --- file tree ----------------------------------------------------- */
+.treewrap{overflow-x:auto;border:1px solid var(--rule);border-radius:4px;
+  background:var(--surface);-webkit-overflow-scrolling:touch}
+ul.tree{list-style:none;margin:0;padding:12px 14px;font-family:var(--mono);
+  font-size:12.5px;line-height:1.9;min-width:max-content}
+ul.tree li{display:flex;gap:14px;align-items:baseline;white-space:nowrap}
+ul.tree .nm{color:var(--ink)}
+ul.tree .nm.dir{color:var(--accent);font-weight:600}
+ul.tree .meta{margin-left:auto;color:var(--ink-3);font-size:11px;padding-left:24px}
+
+/* --- log / commit list --------------------------------------------- */
+ul.log{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+ul.log li{display:flex;gap:12px;align-items:baseline;padding:8px 0;
+  border-bottom:1px solid var(--rule);font-size:14.5px}
+ul.log li:last-child{border-bottom:none}
+ul.log .sha{font-family:var(--mono);font-size:11.5px;color:var(--accent);flex:none;
+  padding-top:1px}
+ul.log .subj{flex:1 1 auto;color:var(--ink-2);overflow-wrap:anywhere;line-height:1.45}
+ul.log .when{font-family:var(--mono);font-size:11px;color:var(--ink-3);flex:none;
+  white-space:nowrap;padding-top:1px}
+
+/* --- definition rows ----------------------------------------------- */
+dl.facts{margin:0;display:grid;grid-template-columns:minmax(96px,auto) 1fr;
+  gap:0;font-size:14.5px}
+dl.facts dt{font-family:var(--mono);font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);padding:8px 20px 8px 0;
+  border-top:1px solid var(--rule);white-space:nowrap}
+dl.facts dd{margin:0;padding:8px 0;border-top:1px solid var(--rule);color:var(--ink-2);
+  overflow-wrap:anywhere;min-width:0}
+dl.facts dt:first-of-type,dl.facts dd:first-of-type{border-top:none}
+dl.facts dd b{color:var(--ink);font-weight:600}
+dl.facts dd .path{background:none;padding:0;font-size:13px}
+
+/* --- disclosure ---------------------------------------------------- */
+details.fold{border:1px solid var(--rule);border-radius:4px;background:var(--surface);
+  box-shadow:var(--shadow);overflow:hidden}
+details.fold>summary{cursor:pointer;list-style:none;padding:11px 15px;
+  font-family:var(--mono);font-size:11px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-3);display:flex;gap:10px;align-items:baseline}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary .foldn{margin-left:auto;color:var(--ink-3);opacity:.85;
+  font-variant-numeric:tabular-nums}
+details.fold>summary::after{content:"+";margin-left:12px;color:var(--accent);
+  font-size:13px;line-height:1}
+details.fold>summary:hover{color:var(--accent)}
+details.fold[open]>summary::after{content:"–"}
+details.fold[open]>summary{border-bottom:1px solid var(--rule)}
+details.fold .foldbody{padding:13px 15px 16px}
+details.fold .foldbody>.treewrap,details.fold .foldbody>.tw{border:none;border-radius:0}
+details.fold .foldbody:has(>.treewrap),details.fold .foldbody:has(>.tw){padding:0}
+
+/* --- empty state --------------------------------------------------- */
+.hollow{border:1px dashed var(--rule-2);border-radius:4px;padding:26px 20px;
+  text-align:center;color:var(--ink-3);font-size:14.5px;background:var(--surface)}
+.hollow b{display:block;font-family:var(--display);font-size:19px;line-height:1.25;
+  color:var(--ink-2);font-weight:400;margin-bottom:5px}
+
+/* --- footer -------------------------------------------------------- */
+footer{border-top:1px solid var(--rule);background:var(--surface);
+  padding:30px 0 48px;font-size:14.5px;color:var(--ink-2)}
+footer h2{font-family:var(--display);font-weight:400;font-size:21px;margin:0 0 10px;
+  color:var(--ink)}
+footer p{max-width:var(--measure);margin:0 0 11px;line-height:1.6}
+footer ul{max-width:var(--measure);margin:0 0 11px;padding-left:20px;
+  display:flex;flex-direction:column;gap:7px}
+footer .colophon{font-family:var(--mono);font-size:11px;letter-spacing:.06em;
+  color:var(--ink-3);margin:18px 0 0;line-height:1.7;overflow-wrap:anywhere}
+
+/* --- narrow screens ------------------------------------------------ */
+/* Keep the stat band on tidy rows rather than letting one trailing cell
+   stretch across a whole row on its own. */
+@media (max-width:800px){.cell{flex:1 1 33.333%}}
+
+@media (max-width:560px){
+  .wrap{padding-left:16px;padding-right:16px}
+  .mast-in{padding-top:32px;padding-bottom:24px}
+  .cell{flex:1 1 50%}
+  dl.facts{grid-template-columns:1fr;gap:0}
+  dl.facts dt{padding:8px 0 0;border-top:1px solid var(--rule)}
+  dl.facts dd{padding:2px 0 8px;border-top:none}
+  dl.facts dd:first-of-type{border-top:none}
+  ul.log li{flex-wrap:wrap;gap:4px 12px}
+  ul.log .subj{flex:1 1 100%;order:3}
+}
+
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+@media print{
+  :root{--ground:#fff;--surface:#fff;--surface-2:#f4f4f4;--ink:#000;--ink-2:#333;
+    --ink-3:#666;--rule:#ccc;--accent:#243a72;--accent-soft:#eef1f9}
+  body{font-size:11pt}
+  .wrap{max-width:none}
+  header.mast,footer{background:none}
+  details.fold{box-shadow:none}
+  details.fold>summary::after{content:""}
+  details.fold .foldbody{display:block!important}
+  details.guess>summary::after{content:""}
+  details.guess .gbody{display:block!important}
+  .decide,details.guess{break-inside:avoid-page}
+  section{break-inside:avoid-page}
+  .heatscroll,.treewrap,.tw,.diawrap{overflow:visible}
+}
+</style>
+</head>
+<body>
+
+<header class="mast">
+  <div class="wrap mast-in">
+    <p class="eyebrow">Code breakdown</p>
+    <h1>Reading Ground Control</h1>
+    <p class="standfirst">A guided reading of the syntax, idioms and call sites in this repository: what a
+      typical file looks like, what one request actually does, why every subprocess is spawned the way it is,
+      and what would mark new code as foreign.</p>
+
+<dl class="strip"><div class="cell"><dt>Status</dt><dd>Active</dd></div><div class="cell"><dt>Files</dt><dd>101</dd></div><div class="cell"><dt>Size</dt><dd>5.4 MB</dd></div><div class="cell"><dt>Commits</dt><dd>37</dd></div><div class="cell"><dt>Language</dt><dd>JavaScript</dd></div><div class="cell"><dt>Last activity</dt><dd>17 minutes ago</dd></div></dl>
+
+    <div class="callout">
+      <h2>The one fact that shapes every file</h2>
+      <p>There are <strong>no third-party packages</strong>. <code>package.json</code> declares no
+        <code>dependencies</code> and no <code>devDependencies</code> block at all; every
+        <code>import</code> in <span class="path">lib/</span> and <span class="path">server.js</span> is either a
+        <code>node:</code> builtin or a relative path to another file in this repository. The browser code
+        imports nothing. So "which library does this?" almost always has the same answer: it does it itself,
+        in a function you can open.</p>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+<section>
+  <h2 class="sec">What is actually in here</h2>
+  <p class="seclabel">Orientation</p>
+
+  <p class="body">Four kinds of code share this repository, and they follow different rules. The Node server
+    and <span class="path">lib/</span> are one dialect. The browser bundle in <span class="path">public/js/</span>
+    is a second, written against the DOM with no build step. <span class="path">app/GroundControl.swift</span>
+    is a native shell, and <span class="path">build-app.sh</span> assembles it.</p>
+
+  <div class="comp"><div class="compbar" role="img" aria-label="Language composition: JavaScript 80%, CSS 9.8%, Markdown 4.1%, HTML 3.4%, Swift 1.8%, Shell 0.3%"><span style="width:81%;background:var(--c1)" title="JavaScript: 80%"></span><span style="width:9.8%;background:var(--c2)" title="CSS: 9.8%"></span><span style="width:4.1%;background:var(--c3)" title="Markdown: 4.1%"></span><span style="width:3.4%;background:var(--c4)" title="HTML: 3.4%"></span><span style="width:1.8%;background:var(--c5)" title="Swift: 1.8%"></span><span style="width:0.3%;background:var(--c6)" title="Shell: 0.3%"></span></div><ul class="complegend"><li><span class="sw" style="background:var(--c1)"></span><b>JavaScript</b> <span class="n">80% · 2.5 MB</span></li><li><span class="sw" style="background:var(--c2)"></span><b>CSS</b> <span class="n">9.8% · 317 KB</span></li><li><span class="sw" style="background:var(--c3)"></span><b>Markdown</b> <span class="n">4.1% · 135 KB</span></li><li><span class="sw" style="background:var(--c4)"></span><b>HTML</b> <span class="n">3.4% · 111 KB</span></li><li><span class="sw" style="background:var(--c5)"></span><b>Swift</b> <span class="n">1.8% · 58.5 KB</span></li><li><span class="sw" style="background:var(--c6)"></span><b>Shell</b> <span class="n">0.3% · 8.4 KB</span></li></ul></div>
+
+  <p class="note">Roughly half of that JavaScript total is not source you should read. <span class="path">GroundControl.app/</span>
+    and <span class="path">Vantage.app/</span> are built application bundles checked into the repository, each carrying
+    its own frozen copy of <span class="path">server.js</span> and <span class="path">lib/</span>. When a search
+    returns three hits for one function, two of them are usually those copies.</p>
+
+  <div class="callout plain">
+    <h2>Where to start reading</h2>
+    <p><span class="path">lib/util.js</span> is imported 21 times, more than any other internal module, and it is
+      short. Read it first: it holds the ignore list, the slug rules, the relative-time formatter, the MIME
+      table and <code>resolveInside</code>, the path guard every file-reading route depends on. After that,
+      <span class="path">lib/git.js</span> at 194 lines is the cleanest example of the house style.</p>
+  </div>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2 class="sec">The shape of a typical file</h2>
+  <p class="seclabel">lib/git.js, top to bottom</p>
+
+  <ul class="pills">
+    <li class="pill accent">ES modules</li>
+    <li class="pill">named exports at the bottom</li>
+    <li class="pill">jsdoc block comments</li>
+    <li class="pill">promise wrapper</li>
+  </ul>
+
+  <p class="body">Every module in <span class="path">lib/</span> that does work (as opposed to rendering HTML)
+    has the same five-part skeleton. Learn it once and the other sixteen files stop being unfamiliar.</p>
+
+  <dl class="facts">
+    <dt>1. Header</dt>
+    <dd>A block comment naming the module and stating its rules. In <span class="path">lib/git.js</span> the
+      header is three sentences and it tells you the whole contract: argv arrays, no shell, a 5 second timeout,
+      failures resolve to <code>null</code>.</dd>
+    <dt>2. Imports</dt>
+    <dd>Builtins first with the <code>node:</code> prefix, then relative imports of project files, always with
+      the <code>.js</code> extension. There is no bare-package import anywhere.</dd>
+    <dt>3. Constants</dt>
+    <dd><code>SCREAMING_CASE</code> at module scope, each with a comment saying what the number protects.
+      <code>GIT_TIMEOUT_MS = 5000</code>, <code>MAX_BUFFER = 32 * 1024 * 1024</code>.</dd>
+    <dt>4. Functions</dt>
+    <dd>Plain <code>function</code> declarations, not arrow constants. Sections are separated by a banner
+      comment of dashes. Small helpers sit next to the code that uses them.</dd>
+    <dt>5. Exports</dt>
+    <dd>One <code>export { … }</code> block on the last line. Nothing is exported inline.</dd>
+  </dl>
+
+  <p class="body">The one function to read closely is the wrapper every other function in the file calls.
+    It shows the error convention, the subprocess convention and the promise convention in eighteen lines.</p>
+
+  <figure class="snip">
+    <figcaption><span class="f">lib/git.js:26</span><span class="t">the whole house style</span></figcaption>
+<pre><code>/** Run `git &lt;args&gt;` in `cwd`. Resolves to trimmed stdout, or null on any failure. */
+function git(cwd, args) {
+  return new Promise((resolve) =&gt; {
+    let done = false;
+    const finish = (v) =&gt; { if (!done) { done = true; resolve(v); } };
+    try {
+      <mark>execFile('git', args, {</mark>
+        cwd,
+        timeout: GIT_TIMEOUT_MS,
+        maxBuffer: MAX_BUFFER,
+        env: GIT_ENV,
+        windowsHide: true,
+        killSignal: 'SIGKILL',
+      }, (err, stdout) =&gt; {
+        if (err) return <mark>finish(null)</mark>;
+        finish(String(stdout).replace(/\n+$/, ''));
+      });
+    } catch {
+      finish(null);
+    }
+  });
+}</code></pre>
+    <div class="why"><b>Three conventions in one function.</b> <code>execFile</code> takes the command and an
+      <em>array</em> of arguments, so no shell parses the string and a folder called <code>my; rm -rf</code>
+      is a filename, not two commands. The promise <b>resolves</b> on failure rather than rejecting, so no
+      caller needs a <code>try</code>. And <code>finish</code> guards against a double settle, because
+      <code>execFile</code> can fire both its callback and a timeout kill.</div>
+  </figure>
+
+  <p class="body">Because failure is <code>null</code> rather than an exception, the caller can fire seven git
+    commands at once and let each one fail on its own. <code>Promise.all</code> here is not a fan-out over
+    unreliable work that might reject; every entry is guaranteed to settle.</p>
+
+  <figure class="snip">
+    <figcaption><span class="f">lib/git.js:72</span><span class="t">array destructuring + Promise.all</span></figcaption>
+<pre><code>  const [
+    branchRaw, headRaw, countRaw, count30Raw, statusRaw, remoteRaw, upstreamRaw,
+  ] = <mark>await Promise.all([</mark>
+    git(dir, ['rev-parse', '--abbrev-ref', 'HEAD']),
+    git(dir, ['log', '-1', '--format=%H%x1f%aI%x1f%s%x1f%an']),
+    git(dir, ['rev-list', '--count', 'HEAD']),
+    git(dir, ['rev-list', '--count', '--since=30.days.ago', 'HEAD']),
+    git(dir, ['status', '--porcelain', '--untracked-files=normal']),
+    git(dir, ['config', '--get', 'remote.origin.url']),
+    git(dir, ['rev-list', '--left-right', '--count', 'HEAD...@{upstream}']),
+  ]);</code></pre>
+    <div class="why"><b>Seven processes, one wait.</b> <code>Promise.all</code> takes an array of promises and
+      gives back an array of their results in the same order, finishing when the slowest does. The
+      <code>[a, b, c] = …</code> on the left is array destructuring: it names the seven results positionally in
+      one statement. <code>%x1f</code> in the format strings emits ASCII 31, the unit separator, which
+      <span class="path">lib/git.js:93</span> splits on: a delimiter that cannot appear in a commit subject.</div>
+  </figure>
+
+  <p class="body">One more idiom appears at the top of nearly every file that consumes another module. The
+    import brings in the whole namespace, then a destructuring assignment lifts out the handful of names the
+    file actually uses.</p>
+
+  <figure class="snip">
+    <figcaption><span class="f">lib/scan.js:12</span><span class="t">namespace import, then unpack</span></figcaption>
+<pre><code>import * as util from './util.js';
+import * as gitlib from './git.js';
+import * as docslib from './docs.js';
+
+<mark>const {</mark>
+  isIgnoredDir, slugify, uniqueSlug, relativeTime, toISO,
+  langForExt, NON_PRIMARY_LANGS, isScannableTextExt, truncateWords,
+<mark>} = util;</mark></code></pre>
+    <div class="why"><b>Why both.</b> <code>import * as util</code> keeps <code>util.</code> available for
+      anything added later, and the destructured block gives short local names for the hot ones. It also
+      documents, in one place at the top of the file, exactly which parts of the utility module this file
+      depends on. <span class="path">lib/reclaim.js:44</span> and <span class="path">server.js:34</span> do
+      the same thing.</div>
+  </figure>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2 class="sec">One request, all the way down</h2>
+  <p class="seclabel">GET /api/projects</p>
+
+  <p class="body">This is the operation the whole project exists to perform: turn a list of folders into the
+    payload that draws the grid. Follow it once and most of <span class="path">server.js</span> and
+    <span class="path">lib/scan.js</span> become readable.</p>
+
+  <figure class="dia">
+    <div class="diawrap">
+      <svg viewBox="0 0 640 520" role="img" aria-label="A GET request for /api/projects passes through route, getScan, scanSources, one scanProject per folder which runs a directory walk and git commands, then the completed marks are folded in, then a live-agent sweep, then the JSON is sent.">
+        <defs>
+          <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z"/>
+          </marker>
+          <marker id="a2" class="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z"/>
+          </marker>
+        </defs>
+
+        <rect class="dbox" x="32" y="12" width="264" height="50" rx="6"/>
+        <text class="dlabel" x="48" y="34">route()</text>
+        <text class="dsub" x="48" y="50">server.js:516</text>
+
+        <line class="dline" x1="164" y1="62" x2="164" y2="90" marker-end="url(#a1)"/>
+        <text class="dedge" x="176" y="80">pathname match, :565</text>
+
+        <rect class="dbox a" x="32" y="92" width="264" height="54" rx="6"/>
+        <text class="dlabel a" x="48" y="116">getScan(fresh)</text>
+        <text class="dsub" x="48" y="132">30 s cache, one scan in flight</text>
+
+        <line class="dline a" x1="164" y1="146" x2="164" y2="174" marker-end="url(#a2)"/>
+        <text class="dedge a" x="176" y="164">cache miss</text>
+
+        <rect class="dbox" x="32" y="176" width="264" height="54" rx="6"/>
+        <text class="dlabel" x="48" y="200">scanSources()</text>
+        <text class="dsub" x="48" y="216">lib/scan.js:449</text>
+
+        <line class="dline" x1="164" y1="230" x2="164" y2="258" marker-end="url(#a1)"/>
+        <text class="dedge" x="176" y="248">one job per folder</text>
+
+        <rect class="dbox" x="32" y="260" width="264" height="58" rx="6"/>
+        <text class="dlabel" x="48" y="284">scanProject() x N</text>
+        <text class="dsub" x="48" y="302">Promise.all over the jobs</text>
+
+        <line class="dline" x1="296" y1="278" x2="336" y2="278" marker-end="url(#a1)"/>
+        <line class="dline" x1="296" y1="300" x2="336" y2="330" marker-end="url(#a1)"/>
+
+        <rect class="dbox" x="340" y="252" width="272" height="50" rx="6"/>
+        <text class="dlabel" x="356" y="274">walkProject()</text>
+        <text class="dsub" x="356" y="290">one readdir walk, 20k cap</text>
+
+        <rect class="dbox" x="340" y="312" width="272" height="50" rx="6"/>
+        <text class="dlabel" x="356" y="334">gitlib.summary()</text>
+        <text class="dsub" x="356" y="350">7 git commands at once</text>
+
+        <line class="dline" x1="164" y1="318" x2="164" y2="346" marker-end="url(#a1)"/>
+
+        <rect class="dbox" x="32" y="348" width="264" height="50" rx="6"/>
+        <text class="dlabel" x="48" y="370">MARKS.applyTo()</text>
+        <text class="dsub" x="48" y="386">adds completed to each project</text>
+
+        <line class="dline" x1="164" y1="398" x2="164" y2="426" marker-end="url(#a1)"/>
+
+        <rect class="dbox" x="32" y="428" width="264" height="54" rx="6"/>
+        <text class="dlabel" x="48" y="452">withAgents()</text>
+        <text class="dsub" x="48" y="468">ps + lsof, 1.5 s budget</text>
+
+        <line class="dline" x1="296" y1="455" x2="348" y2="455" marker-end="url(#a1)"/>
+        <text class="dedge" x="300" y="446">payload</text>
+
+        <rect class="dbox" x="352" y="428" width="248" height="54" rx="6"/>
+        <text class="dlabel" x="368" y="452">sendJSON()</text>
+        <text class="dsub" x="368" y="468">Cache-Control: no-store</text>
+      </svg>
+    </div>
+    <figcaption><b>Every project is scanned concurrently, and two of the three enrichment steps can fail
+      without failing the request.</b> A project whose walk throws becomes a placeholder card
+      (<code>failedProject</code>, <span class="path">lib/scan.js:391</span>); an agent sweep that overruns
+      its budget returns the payload untouched.</figcaption>
+  </figure>
+
+  <p class="body">The cache at the top of that flow carries the most interesting comment in the server, because
+    the number in it was chosen against a measurement rather than a preference.</p>
+
+  <details class="guess">
+    <summary>The SSE stream polls for agent activity every 5 seconds, and each poll calls
+      <code>getScan(false)</code>. What happens if you set the scan cache TTL to something near 5 seconds so the
+      dashboard stays fresher?</summary>
+    <div class="gbody">
+      <p>It gets slower, continuously. The comment at <span class="path">server.js:162</span> records the
+        measurement: a full scan takes about 800ms, so a TTL near the poll interval "lands the freshness check
+        on alternating sides of the boundary and triggers a synchronous 32k-dirent re-walk every ~10s even
+        when nothing on disk changed". The fix was to move the TTL well clear of the poll interval, to
+        <code>CACHE_TTL_MS = 30000</code>, and let the paths that genuinely need freshness pass
+        <code>fresh=true</code>.</p>
+      <p>The same shape appears in <span class="path">lib/agents.js:89</span>, where
+        <code>PROC_TTL_MS = 6000</code> must sit <em>above</em> the same 5 second poll: at 2500ms the cached
+        process sweep had always expired by the next poll, so every poll paid a full <code>ps</code> plus
+        <code>lsof</code>, measured at 226ms of work and roughly 4 to 5% of a core at idle.</p>
+    </div>
+  </details>
+
+  <figure class="snip">
+    <figcaption><span class="f">server.js:183</span><span class="t">cache, dedupe, generation</span></figcaption>
+<pre><code>async function getScan(fresh) {
+  if (!fresh &amp;&amp; cache &amp;&amp; Date.now() - cache.at &lt; CACHE_TTL_MS) return cache.payload;
+  <mark>if (inFlight &amp;&amp; inFlightGeneration === scanGeneration) return inFlight;</mark>
+  const generation = scanGeneration;
+  inFlightGeneration = generation;
+  inFlight = (async () =&gt; {
+    try {
+      const payload = await scan.scanSources(SOURCES.all());
+      …
+      <mark>if (generation === scanGeneration) cache = { payload, at: Date.now() };</mark>
+      return payload;</code></pre>
+    <div class="why"><b>Two different jobs in one function.</b> The second line returns the
+      <em>promise itself</em> to a second caller, so ten simultaneous requests share one filesystem walk
+      instead of starting ten. <code>scanGeneration</code> is a counter bumped whenever the watched-folder list
+      changes (<code>sourcesChanged</code>, <span class="path">server.js:150</span>); a scan that started before
+      a folder was added is allowed to finish, but its result is never written to the cache, because it never
+      heard of the new folder.</div>
+  </figure>
+
+  <p class="body">The walk at the far end of that chain is the only place this project reads a directory tree,
+    and it is written as an explicit stack rather than recursion so that its budgets are enforceable. Every
+    limit is a named constant at the top of <span class="path">lib/scan.js</span>.</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Budget</th><th>Value</th><th>What it protects</th></tr></thead>
+      <tbody>
+        <tr><td class="m">MAX_DEPTH</td><td class="n">6</td><td>Directory levels below a project root. Deeper is source, not structure.</td></tr>
+        <tr><td class="m">MAX_ENTRIES</td><td class="n">20000</td><td>Total directory entries visited. Overrun sets <code>truncated</code> and stops.</td></tr>
+        <tr><td class="m">TODO_MAX_FILES</td><td class="n">600</td><td>Files actually opened to count TODO markers.</td></tr>
+        <tr><td class="m">TODO_MAX_BYTES</td><td class="n">8 MB</td><td>Total bytes read for those markers, per project.</td></tr>
+        <tr><td class="m">MAX_DOC_CANDIDATES</td><td class="n">80</td><td>Documents considered for the featured pick.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">Constants from <span class="path">lib/scan.js:25</span> to <span class="path">:30</span>.
+    A budget that is hit is reported (<code>acc.truncated</code>), never silently swallowed.</p>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2 class="sec">The constructs this code leans on</h2>
+  <p class="seclabel">Language features, in context</p>
+
+  <p class="body">The JavaScript here is modern but deliberately plain. There are no generators, no
+    <code>Proxy</code>, no decorators, no class hierarchies: the four classes in the codebase
+    (<code>PathError</code>, <code>Marks</code>, <code>Registry</code>, <code>SourceError</code>) each extend
+    nothing or extend <code>Error</code>. What the code does lean on is listed below, each with a real site.</p>
+
+  <ul class="terms">
+    <li><span class="t">async / await</span><span class="d">Everywhere I/O happens. Every async function that
+      can fail returns a value rather than throwing.</span><span class="w">lib/scan.js:260</span></li>
+    <li><span class="t">Promise.all</span><span class="d">Fan out independent work and wait once. Used only
+      where each promise is already failure-proof.</span><span class="w">lib/git.js:74, lib/scan.js:469</span></li>
+    <li><span class="t">optional catch binding</span><span class="d"><code>catch { }</code> with no error
+      variable. The dominant error idiom in this repo: swallow, degrade, carry on.</span><span class="w">lib/scan.js:103</span></li>
+    <li><span class="t">destructuring</span><span class="d">On imports, on <code>Promise.all</code> results,
+      and on split lines: <code>const [, iso, subject, author] = headRaw.split(SEP)</code>.</span><span class="w">lib/git.js:93</span></li>
+    <li><span class="t">spread / rest</span><span class="d">Mostly to turn a Map or Set into a sortable array:
+      <code>[...langBytes.entries()]</code>.</span><span class="w">lib/scan.js:205</span></li>
+    <li><span class="t">template literal</span><span class="d">Both for short strings and, in
+      <span class="path">lib/house-style.js</span>, for multi-thousand-line prompt documents.</span><span class="w">server.js:408</span></li>
+    <li><span class="t">Map / Set</span><span class="d">The default containers. <code>Set</code> for ignore
+      lists and dedupe, <code>Map</code> for every registry.</span><span class="w">lib/util.js:13, lib/comms.js:76</span></li>
+    <li><span class="t">EventEmitter</span><span class="d">Node's publish/subscribe object. Two registries use
+      one, and both hand back an unsubscribe function.</span><span class="w">lib/jobs.js:21, lib/comms.js:80</span></li>
+    <li><span class="t">AbortController</span><span class="d">The standard cancellation handle. Used where
+      there is no subprocess to signal, notably the local HTTP tier.</span><span class="w">lib/generate.js:652</span></li>
+    <li><span class="t">Symbol</span><span class="d">Exactly one, as a sentinel value that cannot collide with
+      any real result. See the race below.</span><span class="w">lib/agents.js:787</span></li>
+    <li><span class="t">sticky regex state</span><span class="d">A <code>/g</code> regex keeps a
+      <code>lastIndex</code> between calls, so module-level ones are reset before use.</span><span class="w">lib/scan.js:187</span></li>
+    <li><span class="t">createElementNS</span><span class="d">Browser side only. SVG nodes must be created in
+      the SVG namespace or they render as nothing.</span><span class="w">public/js/app.js:24</span></li>
+  </ul>
+
+  <p class="body">Two of those deserve the code rather than a description. The first is the sentinel, which
+    solves a problem <code>Promise.race</code> creates: the race tells you which promise won, but if the
+    winner's value could itself be <code>null</code> or an empty array you cannot tell a timeout from an
+    answer.</p>
+
+  <figure class="snip">
+    <figcaption><span class="f">lib/agents.js:786</span><span class="t">a sentinel that cannot be confused</span></figcaption>
+<pre><code>      const <mark>OVERDUE = Symbol('overdue')</mark>;
+      const wait = Math.max(60, deadline - Date.now());
+      let timer = null;
+      const raced = await <mark>Promise.race([</mark>
+        listProcesses(),
+        new Promise((r) =&gt; { timer = setTimeout(() =&gt; r(OVERDUE), wait); }),
+      ]);
+      if (timer) clearTimeout(timer);
+      if (raced === OVERDUE) { map.budgetExceeded = true; procs = []; }
+      else procs = raced || [];</code></pre>
+    <div class="why"><b>What this buys.</b> <code>Promise.race</code> settles with whichever promise finishes
+      first. A <code>Symbol</code> is a value guaranteed unequal to every other value in the program, so
+      <code>raced === OVERDUE</code> is an exact test for "the timer won", even though a successful sweep can
+      legitimately return an empty array. The comment above it notes the second half: the abandoned
+      <code>listProcesses()</code> call keeps running and lands in the cache, so the next request gets the
+      answer for free.</div>
+  </figure>
+
+  <p class="body">The second is the error idiom that appears more than any other construct in the repository:
+    a <code>try</code> whose <code>catch</code> takes no argument and does nothing but continue.</p>
+
+  <figure class="snip">
+    <figcaption><span class="f">lib/scan.js:101</span><span class="t">catch with no binding</span></figcaption>
+<pre><code>    // Symlink-loop guard: a real path is only ever descended into once.
+    let real;
+    <mark>try { real = fs.realpathSync(cur.abs); } catch { continue; }</mark>
+    if (visited.has(real)) continue;
+    visited.add(real);
+
+    let list;
+    try { list = fs.readdirSync(cur.abs, { withFileTypes: true }); } catch { continue; }</code></pre>
+    <div class="why"><b>Read this as a filter, not as error handling.</b> <code>catch { }</code> without
+      <code>(err)</code> is legal modern JavaScript and says "I do not care which error". Here an unreadable
+      directory is not an exceptional condition, it is a normal fact about somebody's disk, and the walk simply
+      moves on. <code>realpathSync</code> resolves symbolic links to the real path on disk, and
+      <code>visited</code> is the loop guard: a symlink pointing at an ancestor would otherwise walk forever.</div>
+  </figure>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2 class="sec">The libraries, which are all one library</h2>
+  <p class="seclabel">node: builtins and how each is used here</p>
+
+  <p class="body">Sixteen "libraries" were detected by the scan; eleven are Node builtins, four are Apple
+    frameworks imported by the Swift shell, and one is a false positive explained further down. Here is what
+    each builtin actually does in this repository, as opposed to what it does in general.</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Module</th><th>Used for</th><th>Notable here</th></tr></thead>
+      <tbody>
+        <tr><td class="m">node:fs</td><td>Synchronous directory walks, <code>readdirSync</code> with
+          <code>withFileTypes</code>, <code>createReadStream</code> for static files.</td>
+          <td>Sync calls dominate because a walk is CPU and page-cache bound; the async variant is used where a
+            handle is held open.</td></tr>
+        <tr><td class="m">node:fs/promises</td><td>Everything that awaits: staging a generated file, the tail
+          read of a transcript, moving a folder to the Trash.</td>
+          <td><code>fsp.cp</code> with <code>verbatimSymlinks</code> and <code>errorOnExist</code>
+            (<span class="path">lib/reclaim.js:909</span>).</td></tr>
+        <tr><td class="m">node:path</td><td>Every path join, resolve and extension test.</td>
+          <td><code>path.sep</code> is used in the containment checks, never a hard-coded slash.</td></tr>
+        <tr><td class="m">node:child_process</td><td>All three of <code>execFile</code>,
+          <code>spawn</code> and <code>spawnSync</code>, each for a distinct job.</td>
+          <td>The argv array form only. There is no <code>exec</code> anywhere and therefore no shell.</td></tr>
+        <tr><td class="m">node:http</td><td><code>http.createServer</code> and one <code>route()</code>
+          function of string comparisons.</td>
+          <td>No router, no middleware. <code>new URL(req.url, 'http://localhost')</code> does the parsing.</td></tr>
+        <tr><td class="m">node:os</td><td><code>os.homedir()</code> for the config directory,
+          <code>os.tmpdir()</code> in tests.</td><td>The only place the user's home path is derived.</td></tr>
+        <tr><td class="m">node:events</td><td><code>EventEmitter</code> inside the two job registries.</td>
+          <td><code>setMaxListeners(0)</code> because SSE clients come and go and the cleanup is explicit.</td></tr>
+        <tr><td class="m">node:crypto</td><td>One call: <code>randomUUID()</code> for a chat's session id.</td>
+          <td><span class="path">lib/comms.js:141</span>. Job ids elsewhere use <code>Math.random</code>.</td></tr>
+        <tr><td class="m">node:url</td><td><code>fileURLToPath(import.meta.url)</code> to recover
+          <code>__dirname</code>.</td><td>The ES-module equivalent of the CommonJS global.</td></tr>
+        <tr><td class="m">node:test</td><td>The entire test suite, with <code>node:assert/strict</code>.</td>
+          <td>No framework, nothing to install.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="body">The absence is as much a decision as the presence, and it is a decision with a visible bill:
+    <span class="path">public/js/markdown.js</span> is a 49.8 KB markdown renderer and
+    <span class="path">lib/artifact-parts.js</span> is a 53.3 KB HTML component library, both written from
+    scratch.</p>
+
+  <div class="decide">
+    <h3 class="dq">Why no dependencies at all, not even one?</h3>
+    <div class="drow pick"><span class="dk">What it does</span>
+      <p><code>package.json</code> declares no dependencies, so <code>node server.js</code> runs a fresh clone
+        with no install step, and the browser loads two hand-written ES modules with no bundler.</p></div>
+    <div class="drow"><span class="dk">What else was on the table</span>
+      <ul class="dalts">
+        <li><span class="da">express</span>would have replaced roughly 80 lines of <code>route()</code> and
+          <code>sendJSON</code>, and given body parsing for free. It also adds a dependency tree to a tool whose
+          whole selling point is that it reads your projects and installs nothing.</li>
+        <li><span class="da">marked or markdown-it</span>would have deleted
+          <span class="path">public/js/markdown.js</span> entirely, at the cost of auditing someone else's
+          sanitiser for a renderer that is deliberately fed hostile input from disk.</li>
+        <li><span class="da">simple-git or nodegit</span>would have removed the format-string parsing in
+          <span class="path">lib/git.js</span>, but the parsing is 40 lines and a native binding would break the
+          "clone and run" property on every Node upgrade.</li>
+      </ul></div>
+    <div class="drow"><span class="dk">What tipped it</span>
+      <p>The repository states the constraint rather than the motive: <span class="path">server.js:7</span> says
+        "Node stdlib only", every <span class="path">lib/</span> header repeats it, and the README puts
+        "<b>No dependencies.</b> Node standard library and vanilla browser JS" in bold. Nothing records a
+        deliberation, so read it as a hard requirement the code was written to satisfy, not as a conclusion
+        someone reached.</p></div>
+    <div class="drow bill"><span class="dk">What it costs you</span>
+      <p>About 100 KB of hand-written renderer and component code that you now own, including its security
+        posture. Every markdown edge case is your bug. If the artifact HTML needed a real templating language,
+        or the dashboard needed reactive state, you would be writing the third and fourth of these libraries
+        rather than the first two. The break-even point is somewhere just past where this project is now.</p></div>
+  </div>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2 class="sec">Three ways to start a process</h2>
+  <p class="seclabel">node:child_process, in detail</p>
+
+  <p class="body">Nineteen imports of <code>node:child_process</code> make it the most used builtin after
+    <code>fs</code> and <code>path</code>, and the project picks a different entry point for each of three
+    jobs. Knowing which one to reach for is most of writing new code here.</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Call</th><th>Where</th><th>Why that one</th></tr></thead>
+      <tbody>
+        <tr><td class="m">execFile</td><td><span class="path">lib/git.js:32</span>,
+          <span class="path">lib/agents.js:126</span>, <span class="path">server.js:628</span></td>
+          <td>Short command, output collected in one buffer, hard timeout. Nothing streams.</td></tr>
+        <tr><td class="m">spawn</td><td><span class="path">lib/generate.js:824</span>,
+          <span class="path">lib/comms.js:347</span></td>
+          <td>Long-running <code>claude</code> process whose stdout is read line by line for minutes, and whose
+            stdin receives the prompt.</td></tr>
+        <tr><td class="m">spawnSync</td><td><span class="path">lib/generate.js:261</span></td>
+          <td>One-shot <code>claude --version</code> probe during a status check, cached 60 seconds.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="body">The <code>spawn</code> case is where this codebase does something worth studying. Both
+    <span class="path">lib/generate.js</span> and <span class="path">lib/comms.js</span> run the authenticated
+    <code>claude</code> CLI as a child process and read its stream-json output, and both carry the same three
+    unusual decisions: a stripped environment, an argv-level permission fence, and a detached process group.</p>
+
+  <figure class="snip">
+    <figcaption><span class="f">lib/generate.js:800</span><span class="t">the argv, which is the security boundary</span></figcaption>
+<pre><code>  const args = [
+    '-p',
+    '--model', model,
+    '--output-format', 'stream-json',
+    '--verbose',
+    '--add-dir', project.path,
+    '--permission-mode', 'acceptEdits',
+    // Read-only tool surface (contract §2.5). Belt AND braces: allow the three
+    // read tools, and explicitly deny everything that could mutate the repo or
+    // reach the network. Ground Control writes the file, never the model.
+    <mark>'--disallowedTools', 'Write', 'Edit', 'NotebookEdit', 'Bash', 'Task', 'WebFetch', 'WebSearch',</mark>
+    <mark>'--allowedTools', 'Read', 'Glob', 'Grep',</mark>
+    '--append-system-prompt', houseStyle,
+  ];
+  // NOTE: `--bare` is deliberately absent: it forces API-key auth and this
+  // user authenticates through their Claude subscription (contract §0b.3).</code></pre>
+    <div class="why"><b>Two lists, on purpose.</b> An allowlist alone would be enough if the tool set never
+      grew; the denylist means a tool added to the CLI later cannot appear inside a generation run by default.
+      The trailing comment is the clearest example of a convention worth copying: a flag that is
+      <em>deliberately absent</em> gets a comment saying so, because otherwise the next person adds it.</div>
+  </figure>
+
+  <p class="body">The environment handed to that child is not the server's own. Three variables are deleted
+    before the process starts, and the comment above the function explains exactly what would break otherwise.</p>
+
+  <figure class="snip">
+    <figcaption><span class="f">lib/generate.js:292</span><span class="t">a subtraction, not an addition</span></figcaption>
+<pre><code>function childEnv() {
+  const env = Object.assign({}, process.env);
+  <mark>delete env.ANTHROPIC_API_KEY;</mark>
+  delete env.ANTHROPIC_AUTH_TOKEN;
+  delete env.ANTHROPIC_BASE_URL;
+  // Related overrides that would also redirect billing away from the subscription.
+  delete env.ANTHROPIC_API_URL;
+  delete env.CLAUDE_CODE_USE_BEDROCK;
+  delete env.CLAUDE_CODE_USE_VERTEX;
+  env.CLAUDE_CODE_ENTRYPOINT = 'ground-control-forge';
+  return env;
+}</code></pre>
+    <div class="why"><b>Why delete rather than ignore.</b> The CLI authenticates through a stored login
+      profile. An API key present in the parent shell would shadow that profile and move the work onto metered
+      billing without anything visibly changing. Copying <code>process.env</code> first and deleting from the
+      copy leaves the server's own environment untouched. <span class="path">lib/comms.js:39</span> imports
+      this same function rather than reimplementing it.</div>
+  </figure>
+
+  <div class="decide">
+    <h3 class="dq">Why shell out to a CLI instead of calling the API over HTTPS?</h3>
+    <div class="drow pick"><span class="dk">What it does</span>
+      <p>Forge and Comms both locate a <code>claude</code> executable on <code>PATH</code>
+        (<span class="path">lib/generate.js:235</span>, with four extra candidate paths), spawn it, write the
+        prompt to its stdin, and parse newline-delimited JSON events off its stdout.</p></div>
+    <div class="drow"><span class="dk">What else was on the table</span>
+      <ul class="dalts">
+        <li><span class="da">An HTTPS call to the API</span>would need a key, which means asking the user for
+          one, storing it, and billing them per run. It would also mean reimplementing the agent loop: the tool
+          calls that let the model read the repository are the entire point of the authored tier.</li>
+        <li><span class="da">An SDK dependency</span>would break the no-dependency rule and still need the key.</li>
+        <li><span class="da">No model at all</span>is a real option and is shipped: the <code>template</code>
+          tier renders the artifact from the deterministic brief with no model involved
+          (<span class="path">lib/generate.js:590</span>).</li>
+      </ul></div>
+    <div class="drow"><span class="dk">What tipped it</span>
+      <p>Stated, in the module header at <span class="path">lib/generate.js:7</span>: "this machine has no
+        ANTHROPIC_API_KEY; the CLI is authenticated against a Claude Max subscription". The billing constraint
+        is written down; the choice follows from it.</p></div>
+    <div class="drow bill"><span class="dk">What it costs you</span>
+      <p>A process boundary with a protocol on it. Roughly 400 lines of
+        <span class="path">lib/generate.js</span> exist only to manage that boundary: locating the binary,
+        buffering stdout into lines, distinguishing a timeout from a cancel from a usage limit, reaping
+        grandchildren, and validating that the bytes coming back are really an HTML document. The output is
+        also unstructured text that has to be sanitised and validated
+        (<span class="path">lib/generate.js:310</span> and <span class="path">:327</span>) rather than a typed
+        response.</p></div>
+  </div>
+
+  <p class="body">That boundary has one genuinely tricky part, and it is the sort of thing that only shows up
+    in production: knowing when the child is finished. Node gives you two events and neither one alone is
+    correct.</p>
+
+  <figure class="dia">
+    <div class="diawrap">
+      <svg viewBox="0 0 700 300" role="img" aria-label="A spawned claude process receives its prompt on stdin, emits one JSON event per line on stdout which handleLine parses, and is settled by whichever of the exit or close events arrives first, with exit deliberately delayed 1.5 seconds.">
+        <defs>
+          <marker id="b1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z"/>
+          </marker>
+          <marker id="b2" class="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z"/>
+          </marker>
+        </defs>
+
+        <text class="dkicker" x="16" y="20">ONE TURN</text>
+
+        <rect class="dbox a" x="16" y="112" width="186" height="66" rx="6"/>
+        <text class="dlabel a" x="32" y="140">spawn(claude)</text>
+        <text class="dsub" x="32" y="158">detached: true</text>
+
+        <line class="dline" x1="202" y1="130" x2="248" y2="58" marker-end="url(#b1)"/>
+        <text class="dedge" x="206" y="82">stdin</text>
+
+        <rect class="dbox" x="252" y="30" width="196" height="56" rx="6"/>
+        <text class="dlabel" x="268" y="54">stdin.end(prompt)</text>
+        <text class="dsub" x="268" y="70">never in the argv</text>
+
+        <line class="dline a" x1="202" y1="145" x2="248" y2="145" marker-end="url(#b2)"/>
+
+        <rect class="dbox" x="252" y="112" width="196" height="66" rx="6"/>
+        <text class="dlabel" x="268" y="140">handleLine(line)</text>
+        <text class="dsub" x="268" y="158">one JSON event a line</text>
+
+        <line class="dline" x1="202" y1="162" x2="248" y2="234" marker-end="url(#b1)"/>
+
+        <rect class="dbox q" x="252" y="212" width="196" height="60" rx="6"/>
+        <text class="dlabel" x="268" y="238">'exit' or 'close'</text>
+        <text class="dsub" x="268" y="256">first one wins</text>
+
+        <line class="dline a" x1="448" y1="145" x2="494" y2="145" marker-end="url(#b2)"/>
+        <text class="dedge a" x="452" y="136">state</text>
+
+        <line class="dline" x1="448" y1="242" x2="494" y2="180" marker-end="url(#b1)"/>
+        <text class="dedge" x="452" y="220">settle()</text>
+
+        <rect class="dbox" x="498" y="112" width="188" height="66" rx="6"/>
+        <text class="dlabel" x="514" y="140">finish(code)</text>
+        <text class="dsub" x="514" y="158">validate, then stage</text>
+      </svg>
+    </div>
+    <figcaption><b>The prompt goes in over stdin and the answer comes back as lines, not as a return value.</b>
+      Nothing is written to disk until <code>finish</code> has validated the accumulated text, so a job that
+      dies mid-run stages nothing.</figcaption>
+  </figure>
+
+  <figure class="snip">
+    <figcaption><span class="f">lib/generate.js:974</span><span class="t">the callback that runs later than it looks</span></figcaption>
+<pre><code>  child.on('close', (code, signal) =&gt; { unregister(); settle(code, signal); });
+  child.on('exit', (code, signal) =&gt; {
+    if (settled || exitTimer) return;
+    exitTimer = <mark>setTimeout(() =&gt; { exitTimer = null; settle(code, signal); }, 1500)</mark>;
+    if (exitTimer.unref) exitTimer.unref();
+  });</code></pre>
+    <div class="why"><b>Why both events, and why one of them waits.</b> <code>close</code> fires only once every
+      stdio stream is closed, and a surviving grandchild (something the agent's own <code>Bash</code> call left
+      running) can hold the stdout pipe open forever, so a job would never finish. <code>exit</code> fires as
+      soon as the process itself is gone, but arrives before the last of stdout has been read. So
+      <code>exit</code> schedules a 1.5 second grace period to let <code>close</code> flush the tail, and
+      whichever path reaches <code>settle</code> first wins; the <code>settled</code> flag makes the second one
+      a no-op. <code>unref()</code> on the timer means a pending grace period cannot keep the process alive by
+      itself.</div>
+  </figure>
+
+  <p class="body">The same file also shows how the child is stopped. <code>detached: true</code> puts the child
+    in its own process group, and <code>process.kill(-pid, …)</code> with a negative pid signals that whole
+    group, which is how a <code>Bash</code> call's leftovers get cleaned up too.</p>
+
+  <details class="fold">
+    <summary>The stop path, and its fallback <span class="foldn">lib/generate.js:867</span></summary>
+    <div class="foldbody">
+<pre><code>  /** Signal the child's whole process group, falling back to the pid alone. */
+  function stop(signal) {
+    state.killed = true;
+    try { process.kill(-child.pid, signal); }
+    catch { try { child.kill(signal); } catch { /* already gone */ } }
+  }</code></pre>
+      <p class="body">The negative pid is the group. If the platform refuses it, the fallback signals just the
+        child. Cancellation, the 20 minute timeout and server shutdown all funnel through this one function;
+        <code>jobs.setCanceller</code> (<span class="path">lib/jobs.js</span>) is how the HTTP layer reaches it
+        without ever seeing a pid.</p>
+    </div>
+  </details>
+
+  <p class="body">Comms builds its argv the same way, and its one non-obvious flag carries a comment explaining
+    why it can never be omitted.</p>
+
+  <figure class="snip">
+    <figcaption><span class="f">lib/comms.js:331</span><span class="t">the fork is not optional</span></figcaption>
+<pre><code>  if (chat.started &amp;&amp; chat.sessionId) {
+    args.push('--resume', chat.sessionId);
+  } else if (chat.resumeFrom) {
+    args.push('--resume', chat.resumeFrom, <mark>'--fork-session'</mark>);
+  } else {
+    args.push('--session-id', chat.sessionId);
+  }</code></pre>
+    <div class="why"><b>Three states, one function.</b> A chat Ground Control owns pins its own session id up
+      front with <code>randomUUID()</code> so later turns can resume it. Continuing a session you already have
+      open elsewhere always forks: the header at <span class="path">lib/comms.js:12</span> explains that
+      resuming in place would mean two processes appending to one transcript, "and the loser of that race loses
+      work". A test asserts the flag is present in the argv, so removing it fails the suite.</div>
+  </figure>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2 class="sec">How errors travel</h2>
+  <p class="seclabel">The convention that is not a language feature</p>
+
+  <p class="body">This codebase almost never throws across a module boundary. Read any function asking "what
+    does this return when the disk lies to me?" and the answer is nearly always a value: <code>null</code>, an
+    empty array, or a filled-in object with a <code>scan failed</code> label on it.</p>
+
+  <ul class="body">
+    <li><strong>Degrade field by field.</strong> <code>gitlib.summary</code> returns an object where each
+      field independently falls back, because each came from its own <code>git</code> call that resolved to
+      <code>null</code>.</li>
+    <li><strong>One bad item must not sink the batch.</strong> <span class="path">lib/scan.js:354</span> wraps
+      each document in its own try, with the comment "one bad doc must not sink the project"; the same shape
+      guards each project inside <code>scanSources</code>.</li>
+    <li><strong>The process never dies.</strong> <span class="path">server.js:40</span> installs handlers for
+      <code>uncaughtException</code> and <code>unhandledRejection</code> that log and continue.</li>
+    <li><strong>Errors that must reach the user carry a status.</strong> Where a failure is the user's
+      business, the code attaches one: <code>Object.assign(new Error('unknown chat'), { status: 404 })</code>
+      in <span class="path">lib/comms.js:261</span>, or a custom class such as <code>PathError</code>
+      (<span class="path">lib/util.js:240</span>) whose constructor sets <code>this.status = 403</code>.</li>
+  </ul>
+
+  <div class="callout warnish">
+    <h2>The exception that proves the rule</h2>
+    <p>There is one place where a failed write deliberately aborts everything.
+      <span class="path">lib/reclaim.js:1028</span> writes an audit line before moving a folder to the Trash,
+      and if that write fails it throws: <b>"the reclaim log could not be written, so nothing was moved"</b>.
+      Everywhere else, logging is best-effort. Here the record is the feature, so no record means no action.</p>
+  </div>
+
+  <p class="body">Async cleanup follows a matching convention: any subscription hands back a function that
+    cancels it, and the caller keeps that function rather than an id.</p>
+
+  <figure class="snip">
+    <figcaption><span class="f">lib/jobs.js:100</span><span class="t">subscribe returns its own undo</span></figcaption>
+<pre><code>function subscribeAll(fn) {
+  if (typeof fn !== 'function') return () =&gt; {};
+  const handler = (event, job) =&gt; { try { fn(event, job); } catch { /* one bad listener must not stop the rest */ } };
+  emitter.on(LIFECYCLE, handler);
+  <mark>return () =&gt; { emitter.off(LIFECYCLE, handler); };</mark>
+}</code></pre>
+    <div class="why"><b>Three details worth copying.</b> The returned closure captures the exact
+      <code>handler</code> that was registered, so removal cannot miss. A non-function argument gets a harmless
+      no-op unsubscribe instead of a crash. And the listener body is wrapped, because these emitters fan out to
+      SSE clients that may already be dead. <span class="path">lib/comms.js:212</span> and
+      <span class="path">server.js:144</span> use the identical shape.</div>
+  </figure>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2 class="sec">The guards, and where they live</h2>
+  <p class="seclabel">Path safety, privacy caps, refusals</p>
+
+  <p class="body">This server reads arbitrary folders on the machine and hands their contents to a browser,
+    so the checks are not incidental. Three of them appear over and over, and new code that touches a file or
+    a route is expected to use them.</p>
+
+  <figure class="dia">
+    <div class="diawrap">
+      <svg viewBox="0 0 700 190" role="img" aria-label="A relative path from a query string passes three independent gates, syntactic then lexical then physical, and any one of them throws a PathError with status 403.">
+        <defs>
+          <marker id="c1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z"/>
+          </marker>
+          <marker id="c2" class="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z"/>
+          </marker>
+        </defs>
+
+        <rect class="dbox" x="14" y="42" width="140" height="56" rx="6"/>
+        <text class="dlabel" x="28" y="66">?path=…</text>
+        <text class="dsub" x="28" y="84">from the query</text>
+
+        <line class="dline" x1="154" y1="70" x2="192" y2="70" marker-end="url(#c1)"/>
+
+        <rect class="dbox" x="196" y="42" width="140" height="56" rx="6"/>
+        <text class="dlabel" x="210" y="66">syntactic</text>
+        <text class="dsub" x="210" y="84">no .., no NUL</text>
+
+        <line class="dline" x1="336" y1="70" x2="364" y2="70" marker-end="url(#c1)"/>
+
+        <rect class="dbox" x="368" y="42" width="144" height="56" rx="6"/>
+        <text class="dlabel" x="382" y="66">path.resolve</text>
+        <text class="dsub" x="382" y="84">under the root</text>
+
+        <line class="dline" x1="512" y1="70" x2="540" y2="70" marker-end="url(#c1)"/>
+
+        <rect class="dbox a" x="544" y="42" width="142" height="56" rx="6"/>
+        <text class="dlabel a" x="558" y="66">fs.realpath</text>
+        <text class="dsub" x="558" y="84">symlink escape</text>
+
+        <line class="dline soft" x1="266" y1="98" x2="266" y2="140" marker-end="url(#c1)"/>
+        <line class="dline soft" x1="440" y1="98" x2="440" y2="140" marker-end="url(#c1)"/>
+        <line class="dline a" x1="615" y1="98" x2="615" y2="140" marker-end="url(#c2)"/>
+
+        <rect class="dbox q" x="196" y="142" width="490" height="36" rx="6"/>
+        <text class="dlabel" x="212" y="165">throw new PathError('forbidden path')</text>
+        <text class="dsub" x="560" y="165">status 403</text>
+      </svg>
+    </div>
+    <figcaption><b>Three independent gates, and the third is the one that matters.</b> The first two can be
+      satisfied by a path that is textually fine but is a symbolic link pointing out of the project; only
+      resolving the real path on disk catches that.</figcaption>
+  </figure>
+
+  <figure class="snip">
+    <figcaption><span class="f">lib/util.js:256</span><span class="t">resolveInside, trimmed</span></figcaption>
+<pre><code>function resolveInside(rootAbs, rel) {
+  if (typeof rel !== 'string' || rel.length === 0) throw new PathError('invalid path');
+  if (rel.indexOf('\0') !== -1) throw new PathError('invalid path');
+
+  // Normalise separators, then reject anything that walks upward.
+  const cleaned = rel.replace(/\\/g, '/').replace(/^\/+/, '');
+  if (path.isAbsolute(rel) || path.isAbsolute(cleaned)) throw new PathError('forbidden path');
+  const segs = cleaned.split('/').filter((s) =&gt; s !== '' &amp;&amp; s !== '.');
+  <mark>if (segs.some((s) =&gt; s === '..')) throw new PathError('forbidden path');</mark>
+  …
+  const rootResolved = path.resolve(rootAbs);
+  const abs = path.resolve(rootResolved, segs.join('/'));
+  <mark>if (abs !== rootResolved &amp;&amp; !abs.startsWith(rootResolved + path.sep)) {</mark>
+    throw new PathError('forbidden path');
+  }</code></pre>
+    <div class="why"><b>Read the containment test carefully.</b> <code>startsWith(root + path.sep)</code>,
+      not <code>startsWith(root)</code>: without the separator, <code>/Users/x/projects-evil</code> would pass
+      as being inside <code>/Users/x/projects</code>. The elided third gate calls
+      <code>fs.realpathSync</code> on the target and on the root and repeats the same comparison, and when the
+      target does not exist yet it resolves the parent instead. The function returns the resolved path, not the
+      real path, so relative links inside a document keep working.</div>
+  </figure>
+
+  <p class="body">The second guard is a network one. The server binds every interface, so anyone on the
+    network can look at the dashboard; the routes that change what it watches, or that start an agent, check
+    where the request came from first.</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Guard</th><th>Site</th><th>What it refuses</th></tr></thead>
+      <tbody>
+        <tr><td class="m">resolveInside</td><td><span class="path">lib/util.js:256</span></td>
+          <td>Any <code>?path=</code> that escapes the project, including through a symlink. Used by
+            <code>/api/doc</code>, <code>/api/raw</code> and the static handler.</td></tr>
+        <tr><td class="m">isLocalRequest</td><td><span class="path">server.js:2037</span></td>
+          <td>Adding or removing a watched folder, browsing the disk, and every Comms route, from anywhere but
+            loopback. Handles <code>::ffff:127.0.0.1</code>, the dual-stack form.</td></tr>
+        <tr><td class="m">isSensitive</td><td><span class="path">lib/brief.js:57</span></td>
+          <td>Reading the <em>contents</em> of any file whose name suggests a credential. The file is still
+            listed by name, never opened.</td></tr>
+        <tr><td class="m">snippet</td><td><span class="path">lib/agents.js:141</span></td>
+          <td>Any string from a transcript longer than 120 characters. Every value leaving that module passes
+            through it.</td></tr>
+        <tr><td class="m">STATIC_EXT</td><td><span class="path">lib/util.js:230</span></td>
+          <td>Serving anything out of <span class="path">public/</span> whose extension is not on a short
+            allowlist.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="note">Note the shape shared by all five: an allowlist or a refusal, expressed as a small pure
+    function in a module, called at the edge. None of them is inline in a route handler.</p>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2 class="sec">Reading a file you must not read whole</h2>
+  <p class="seclabel">lib/agents.js and its budgets</p>
+
+  <p class="body">Agent detection is the most constrained code in the repository, and it is a good study in
+    writing against real numbers. It answers "is a coding agent working in this folder right now" from two
+    sources that are both expensive: the process table, and session transcript files that reach 9 MB.</p>
+
+  <figure class="snip">
+    <figcaption><span class="f">lib/agents.js:507</span><span class="t">a bounded tail read</span></figcaption>
+<pre><code>async function readTail(file, bytes = TAIL_BYTES) {
+  let fh = null;
+  try {
+    fh = await fsp.open(file, 'r');
+    const st = await fh.stat();
+    if (!st.size) return [];
+    const want = Math.min(bytes, st.size);
+    <mark>const start = st.size - want;</mark>
+    const buf = Buffer.allocUnsafe(want);
+    const { bytesRead } = await fh.read(buf, 0, want, start);
+    let text = buf.toString('utf8', 0, bytesRead);
+    // A mid-line start is discarded so only complete JSON lines are parsed.
+    if (start &gt; 0) {
+      const nl = text.indexOf('\n');
+      <mark>text = nl === -1 ? '' : text.slice(nl + 1);</mark>
+    }
+    return text.split('\n');
+  } catch {
+    return [];
+  } finally {
+    if (fh) { try { await fh.close(); } catch { /* ignore */ } }
+  }
+}</code></pre>
+    <div class="why"><b>Positional reads, and why the first line is thrown away.</b>
+      <code>fh.read(buf, offset, length, position)</code> reads from a byte offset without streaming the file.
+      Starting 256 KB from the end almost certainly lands in the middle of a line, and half a JSON object is
+      not parseable, so everything before the first newline is discarded. <code>Buffer.allocUnsafe</code> skips
+      zero-filling the buffer, which is safe here because every byte read is immediately overwritten and only
+      <code>bytesRead</code> of it is decoded. The <code>finally</code> block closes the handle on every path,
+      including the error path: leaking file descriptors in a function called on a five-second timer would
+      exhaust the process.</div>
+  </figure>
+
+  <details class="guess">
+    <summary>A <code>claude</code> process is running, and its transcript file was written to fifteen seconds
+      ago. Is an agent working in that folder?</summary>
+    <div class="gbody">
+      <p>No, and this was a real bug fixed by commit <code>cd994f9</code>. A session that finished replying
+        thirty seconds ago has a fresh modification time and is doing nothing at all. Liveness is not the
+        signal and recency is not the signal either; the signal is the <em>shape of the last event</em> in the
+        transcript.</p>
+      <p><code>turnStateOf</code> (<span class="path">lib/agents.js:722</span>) scans backwards through the
+        parsed events: a trailing <code>tool</code> or <code>user</code> event means the turn is still in
+        flight, and a trailing <code>assistant</code> event means the model replied and stopped. Two more
+        bounds sit on top of it: <code>OPEN_WINDOW_MS</code> (90 minutes) below which a live process counts as
+        present at all, and <code>STALL_WINDOW_MS</code> (10 minutes) after which a session stuck mid-turn
+        stops claiming to be busy, because a process killed during a tool call leaves a <code>tool</code>
+        event as the last thing ever written.</p>
+    </div>
+  </details>
+
+  <p class="body">Those constants are the decision, so they are documented like one. Every budget in that file
+    carries a comment giving the measurement behind it, which is the convention worth carrying into new code
+    here: a number without a reason will be changed by someone who does not know what it protects.</p>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2 class="sec">Things that will confuse you</h2>
+  <p class="seclabel">The traps, with their explanations</p>
+
+  <p class="body">Five things in this repository look wrong until you know why they are there. Two of them are
+    artefacts of the tooling rather than the code.</p>
+
+  <details class="guess">
+    <summary>An automated scan of this repository reports a third-party library named <code>y</code>, imported
+      nine times. There is no such package. Where does it come from?</summary>
+    <div class="gbody">
+      <p>From a comment, matched by the very regular expression the comment describes.
+        <span class="path">lib/brief.js:722</span> introduces the import-detection patterns with the example
+        line <code>// JS/TS: import x from 'y' / import 'y' / export … from 'y'</code>, and the pattern on the
+        next line matches that comment text. Three matches per file, and the file exists three times (the
+        source plus the two checked-in <span class="path">.app</span> bundles), which is the nine.</p>
+      <p>The same effect explains "async iterator (for await)" appearing in the construct table.
+        <span class="path">lib/house-style.js:1368</span> mentions <code>for await (const chunk of stream)</code>
+        inside a prompt string, and that is the only occurrence in the entire repository: a search for real
+        <code>for await</code> loops in <span class="path">lib/</span>, <span class="path">public/</span> and
+        <span class="path">server.js</span> returns nothing else. The lesson generalises: this project's
+        scanner reads strings and comments as code, so treat its output as coordinates to check, not as facts.</p>
+    </div>
+  </details>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Looks like</th><th>Actually is</th></tr></thead>
+      <tbody>
+        <tr><td><b>Duplicate source files.</b> Three copies of <code>brief.js</code>, two of
+          <code>server.js</code>.</td>
+          <td><span class="path">GroundControl.app/</span> and <span class="path">Vantage.app/</span> are built
+            bundles committed to the repository. Their <span class="path">Contents/Resources/</span> holds a
+            frozen copy of the source at build time. Edit the root copy; the bundle is regenerated by
+            <span class="path">build-app.sh</span>.</td></tr>
+        <tr><td><b>A stale environment variable.</b> <code>VANTAGE_OLLAMA_HOST</code> is read somewhere but
+          appears nowhere in <span class="path">lib/</span>.</td>
+          <td>It lives only in the older <span class="path">Vantage.app</span> bundle. The live code reads
+            <code>GROUND_CONTROL_OLLAMA_HOST</code> then <code>OLLAMA_HOST</code>
+            (<span class="path">lib/local.js:42</span>).</td></tr>
+        <tr><td><b>A Map with properties on it.</b> <code>agentActivity</code> returns a
+          <code>Map</code>, then sets <code>map.budgetExceeded</code>.</td>
+          <td>Deliberate, via <code>Object.defineProperty(…, { enumerable: false })</code> at
+            <span class="path">lib/agents.js:774</span>, so the flags ride along with the result without
+            appearing as entries when the Map is iterated.</td></tr>
+        <tr><td><b>A cache being patched by hand.</b> <code>marksChanged()</code> reaches into
+          <code>cache.payload</code> and mutates it.</td>
+          <td><span class="path">server.js:110</span> explains it: marking a project complete flips one boolean
+            on one project, and "a full re-walk to flip one boolean is pure waste". Invalidating the cache
+            would cost an 800ms rescan per click.</td></tr>
+        <tr><td><b>A regex that is reset before use.</b> <code>TODO_RE.lastIndex = 0</code> before the loop.</td>
+          <td>A regex literal with the <code>/g</code> flag stored at module scope keeps its
+            <code>lastIndex</code> between calls. Without the reset, the second file scanned would start
+            matching from wherever the first one stopped (<span class="path">lib/scan.js:187</span>).</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="body">One more, on the browser side. <span class="path">public/js/app.js</span> is 234 KB of
+    vanilla DOM code and it builds every node by hand, which looks verbose until you notice the rule it is
+    enforcing.</p>
+
+  <figure class="snip">
+    <figcaption><span class="f">public/js/app.js:14</span><span class="t">why not innerHTML</span></figcaption>
+<pre><code>const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function h(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) <mark>n.textContent = String(text)</mark>;
+  return n;
+}
+
+function icon(name, cls) {
+  const svg = <mark>document.createElementNS(SVG_NS, 'svg')</mark>;
+  svg.setAttribute('class', cls ? 'icon ' + cls : 'icon');</code></pre>
+    <div class="why"><b>Two rules in ten lines.</b> <code>textContent</code> writes a string as text and can
+      never create an element, which is why the file header can claim that every API value is safe by
+      construction; the single exception is the markdown reader, whose renderer escapes as it emits.
+      <code>createElementNS</code> is required for SVG: an <code>&lt;svg&gt;</code> made with
+      <code>createElement</code> lands in the HTML namespace and draws nothing at all.</div>
+  </figure>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2 class="sec">The outside world</h2>
+  <p class="seclabel">Environment variables, hosts, and the one file that is written</p>
+
+  <p class="body">Nine environment variables are read across the whole repository, and none of them configures
+    a credential. Names and sites below; no value is recorded anywhere in this document or in the brief that
+    produced it.</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Name</th><th>Read at</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td class="m">GROUND_CONTROL_CONFIG</td><td class="m">server.js:67</td>
+          <td>Path to the source-registry JSON file, equivalent to <code>--config</code>. The test suite uses
+            the flag form to keep fixtures away from the real list.</td></tr>
+        <tr><td class="m">GROUND_CONTROL_ROOT</td><td class="m">app/GroundControl.swift:82</td>
+          <td>The folder the macOS app tells the server to watch, ahead of a saved default.</td></tr>
+        <tr><td class="m">GROUND_CONTROL_PAYLOAD_DIR</td><td class="m">app/GroundControl.swift:53</td>
+          <td>Overrides where the app looks for <code>server.js</code>, for running the compiled binary during
+            development.</td></tr>
+        <tr><td class="m">GROUND_CONTROL_OLLAMA_HOST<div class="sub">then OLLAMA_HOST</div></td>
+          <td class="m">lib/local.js:42</td>
+          <td>Where the optional local-model tier looks for ollama. Defaults to a loopback address; a bare
+            host gets <code>http://</code> prefixed.</td></tr>
+        <tr><td class="m">PATH</td><td class="m">lib/generate.js:236<div class="sub">lib/editors.js:43</div></td>
+          <td>Split on <code>path.delimiter</code> and walked by hand to find the <code>claude</code> binary
+            and any installed editor. No shell is involved in either lookup.</td></tr>
+        <tr><td class="m">HOME</td><td class="m">lib/generate.js:229</td>
+          <td>Builds two extra candidate paths for the CLI when it is not on <code>PATH</code>.</td></tr>
+        <tr><td class="m">SHELL</td><td class="m">app/GroundControl.swift:161</td>
+          <td>Last-resort Node lookup for the packaged app, which inherits almost no <code>PATH</code> when
+            launched from Finder. Runs <code>$SHELL -lc 'command -v node'</code>.</td></tr>
+        <tr><td class="m">VANTAGE_OLLAMA_HOST</td><td class="sub">bundled copy only</td>
+          <td>Not read by any current source file. See the previous section.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="body">Exactly one external hostname appears anywhere in the code, and it is not a service this
+    program talks to: <code>nodejs.org</code>, at <span class="path">app/GroundControl.swift:968</span>, opened
+    in the user's browser when the app cannot find Node. The server itself makes no outbound requests except to
+    <code>127.0.0.1</code> for the optional ollama tier.</p>
+
+  <p class="body">What it writes is equally narrow. Two small JSON files under
+    <span class="path">~/.ground-control/</span>, plus a staging directory inside the checkout, and both JSON
+    writes use the same four-line atomic pattern.</p>
+
+  <figure class="snip">
+    <figcaption><span class="f">lib/marks.js:122</span><span class="t">temp file, then rename</span></figcaption>
+<pre><code>    try {
+      fs.mkdirSync(path.dirname(this.file), { recursive: true });
+      const tmp = `${this.file}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, body, { mode: 0o600 });
+      <mark>fs.renameSync(tmp, this.file);</mark>
+      this.saveError = null;
+      return true;
+    } catch (err) {
+      this.saveError = `The completed list could not be saved to ${this.file} (${(err &amp;&amp; err.message) || err}).`;
+      console.error('[marks] save failed:', this.saveError);
+      return false;
+    }</code></pre>
+    <div class="why"><b>Why rename rather than write in place.</b> A rename within one filesystem is atomic:
+      a reader sees either the whole old file or the whole new one, never a half-written one, so a crash
+      mid-save cannot corrupt the config. The pid in the temporary name keeps two servers from colliding, and
+      <code>mode: 0o600</code> makes the file readable only by its owner. The failure is stored on the object
+      and returned as <code>false</code>; it is never thrown at whatever HTTP request triggered it.
+      <span class="path">lib/sources.js:591</span> is the same function for the folder registry.</div>
+  </figure>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2 class="sec">How the tests are written</h2>
+  <p class="seclabel">node --test, 9 files, no framework</p>
+
+  <p class="body">The suite runs with <code>npm test</code>, which is <code>node --test test/*.test.js</code>.
+    Every test imports <code>test</code> from <code>node:test</code> and <code>assert</code> from
+    <code>node:assert/strict</code>, builds its fixtures in a temporary directory, and registers
+    <code>test.after(cleanupFixtures)</code>.</p>
+
+  <figure class="snip">
+    <figcaption><span class="f">test/helpers.js:15</span><span class="t">a guard on the test harness itself</span></figcaption>
+<pre><code>const TMP = fs.realpathSync(os.tmpdir());
+const made = [];
+
+/** A fresh, empty root that is guaranteed to be inside the temp directory. */
+export function fixtureRoot(label = 'root') {
+  const dir = fs.mkdtempSync(path.join(TMP, `ground-control-test-${label}-`));
+  const real = fs.realpathSync(dir);
+  <mark>if (!real.startsWith(TMP + path.sep)) {</mark>
+    throw new Error(`refusing to use a fixture root outside tmp: ${real}`);
+  }
+  made.push(real);
+  return real;
+}</code></pre>
+    <div class="why"><b>The one place this project throws eagerly.</b> Reclaim moves folders to the Trash, so a
+      test pointed at a real projects directory would be destructive. The helper resolves the real path and
+      refuses anything outside the system temp directory, and <code>cleanupFixtures</code> repeats the check
+      before removing anything. The same containment idiom as <code>resolveInside</code>, applied to the test
+      harness.</div>
+  </figure>
+
+  <p class="body">One category of test here is unusual enough to point out: several assertions read a source
+    file as text and match a regular expression against it. That is normally a smell, and the comments explain
+    why it is used deliberately.</p>
+
+  <figure class="snip">
+    <figcaption><span class="f">test/safety.test.js:85</span><span class="t">asserting on source, not behaviour</span></figcaption>
+<pre><code>  const src = await import('node:fs').then((fs) =&gt;
+    fs.readFileSync(new URL('../lib/agents.js', import.meta.url), 'utf8'));
+
+  <mark>assert.match(src, /function turnStateOf/,</mark>
+    'turn-state detection must exist: mtime alone cannot tell working from idle');
+  assert.match(src, /STALL_WINDOW_MS/,
+    'a mid-turn session must stop counting as working once it has stalled');
+  assert.match(src, /a\.active = Math\.min\(a\.live, workingCount\)/,
+    'orbits must be bounded by BOTH live processes and sessions actually mid-turn');</code></pre>
+    <div class="why"><b>What it is doing and what it costs.</b> The behaviour under test depends on live
+      processes and on the user's own transcript store, neither of which a test may create. So the test pins
+      the <em>mechanism</em> instead, with an assertion message naming the bug that made it necessary. The cost
+      is real: rename <code>turnStateOf</code> and the suite fails even though nothing broke. Use this pattern
+      only where the alternative is no test at all, and always write the message as the explanation.</div>
+  </figure>
+
+  <p class="body">The rest of the suite is conventional, and weighted toward what would be expensive to get
+    wrong: every blocker that prevents a folder being trashed has a fixture, path traversal is asserted on
+    every file-reading route, and a fixture repository containing a fake credential is briefed with the test
+    failing if the secret value appears anywhere in the output.</p>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2 class="sec">Writing code that fits</h2>
+  <p class="seclabel">A short close</p>
+
+  <p class="body">If you are adding a feature, the fastest route is to copy a shape that already exists rather
+    than to invent one.</p>
+
+  <ol class="body">
+    <li><strong>A new derived fact about a project</strong> goes in <span class="path">lib/scan.js</span>, into
+      the accumulator inside <code>walkProject</code> if it needs the file walk, and then onto the
+      <code>base</code> object in <code>scanProject</code>. Add it to <code>failedProject</code> too, so the
+      shape stays complete when a scan fails.</li>
+    <li><strong>A new external command</strong> goes through <code>execFile</code> with an argv array, a
+      timeout, and a promise that resolves <code>null</code> on failure. Copy <code>git()</code> from
+      <span class="path">lib/git.js:27</span> or <code>run()</code> from
+      <span class="path">lib/agents.js:120</span>.</li>
+    <li><strong>A new route</strong> is a string comparison inside <code>route()</code>. If it is not a
+      <code>GET</code>, dispatch it before the read-only method guard at <span class="path">server.js:561</span>
+      and check the method inside your own handler, which is what every existing feature block does.</li>
+    <li><strong>Anything that reads a file the user named</strong> calls <code>resolveInside(project.path,
+      rel)</code> and returns 403 on <code>PathError</code>. Anything that changes state or starts a process
+      also calls <code>isLocalRequest(req)</code>.</li>
+    <li><strong>A new module</strong> gets the five-part skeleton: header comment stating its rules, imports,
+      named constants with reasons, functions, and one <code>export { … }</code> block at the bottom.</li>
+  </ol>
+
+  <p class="body">And the four things that would mark new code as foreign here, in rough order of how quickly
+    someone would notice:</p>
+
+  <div class="tw">
+    <table class="vs">
+      <thead><tr><th>Instead of</th><th class="pick">Do what the codebase does</th></tr></thead>
+      <tbody>
+        <tr><td>Adding an npm dependency</td><td class="pick">Write the twenty lines, or ship the feature
+          without it. There is no precedent for the first option anywhere in the tree.</td></tr>
+        <tr><td>Throwing an error up through a module</td><td class="pick">Return <code>null</code> or a
+          filled-in fallback, and attach a <code>status</code> only where the user must see it.</td></tr>
+        <tr><td><code>exec</code> with an interpolated command string</td><td class="pick">
+          <code>execFile</code> or <code>spawn</code> with an argv array. There is no shell in this codebase
+          and no reason to add one.</td></tr>
+        <tr><td>A bare number in a condition</td><td class="pick">A named constant at the top of the file with
+          a comment saying what it protects and what breaks if it is wrong.</td></tr>
+        <tr><td><code>innerHTML</code> in the browser code</td><td class="pick"><code>h()</code> and
+          <code>textContent</code>. The one exception is the markdown reader, and it is documented as such at
+          the top of <span class="path">public/js/app.js</span>.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2 class="sec">Terms used above</h2>
+  <p class="seclabel">Glossary</p>
+
+  <p class="body">Each of these is used in the sense this project uses it, with a place to go and look.</p>
+
+  <ul class="terms">
+    <li><span class="t">dirent</span><span class="d">A directory entry: a name plus a type flag, returned
+      without a second system call by <code>readdirSync(dir, { withFileTypes: true })</code>.</span><span class="w">lib/scan.js:108</span></li>
+    <li><span class="t">mtime</span><span class="d">The moment a file was last written. Used as the activity
+      signal for folders with no git history.</span><span class="w">lib/scan.js:151</span></li>
+    <li><span class="t">realpath</span><span class="d">The path with every symbolic link resolved. Two
+      different paths that realpath to the same string are the same folder.</span><span class="w">lib/util.js:275</span></li>
+    <li><span class="t">EXDEV</span><span class="d">The error a rename returns when source and destination sit
+      on different filesystems. It triggers the verified copy-then-remove fallback.</span><span class="w">lib/reclaim.js:892</span></li>
+    <li><span class="t">process group</span><span class="d">A set of processes that can be signalled together
+      by sending to the negative group id. Created by <code>detached: true</code>.</span><span class="w">lib/generate.js:832</span></li>
+    <li><span class="t">zombie</span><span class="d">A process that has exited but is still listed by
+      <code>ps</code> until its parent collects it. Skipped, or a finished session reads as running.</span><span class="w">lib/agents.js:258</span></li>
+    <li><span class="t">loopback</span><span class="d">The local-only network address. Requests from anywhere
+      else are refused on the routes that change state.</span><span class="w">server.js:2037</span></li>
+    <li><span class="t">SSE</span><span class="d">Server-sent events: a long-lived HTTP response where the
+      server writes <code>event:</code> and <code>data:</code> lines as things happen.</span><span class="w">server.js:388</span></li>
+    <li><span class="t">stream-json</span><span class="d">The CLI output mode this project asks for: one JSON
+      object per line, parsed as it arrives rather than at the end.</span><span class="w">lib/generate.js:918</span></li>
+    <li><span class="t">JSONL transcript</span><span class="d">A session log under
+      <code>~/.claude/projects</code>, one JSON event per line, appended to as the agent works.</span><span class="w">lib/agents.js:440</span></li>
+    <li><span class="t">porcelain</span><span class="d">Git's stable machine-readable output format, as
+      opposed to the human format that changes between versions.</span><span class="w">lib/git.js:79</span></li>
+    <li><span class="t">unit separator</span><span class="d">ASCII 31, emitted by <code>%x1f</code> in a git
+      format string. A delimiter no commit message can contain.</span><span class="w">lib/git.js:59</span></li>
+  </ul>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <h2>What to take away</h2>
+    <p>The consistency here is the point. One error convention, one subprocess convention, one export
+      convention, one path guard, and a comment above every number explaining what it protects. That makes an
+      unfamiliar file in this repository predictable: you can guess where the constants are, guess that a
+      failure returns a value, and guess that the exports are on the last line, and you will be right.</p>
+    <p>The two things worth carrying elsewhere are smaller than the architecture. First, a budget with a
+      measurement in its comment survives contact with the next maintainer; a bare number does not. Second,
+      when a flag or a call is deliberately <em>absent</em>, say so in a comment where the flag would have
+      gone, because absence leaves no other trace.</p>
+    <p class="colophon">Every snippet on this page was copied from the file and line named above it, in the
+      working tree at commit 5c4e94a on branch main. Elisions are marked. Line numbers refer to the source at
+      the repository root, never to the copies under GroundControl.app or Vantage.app.</p>
+  </div>
+</footer>
+
+</body>
+</html>
