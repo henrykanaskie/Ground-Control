@@ -4,11 +4,14 @@
 # dashboard that already lives in this repo.
 #
 #   ./build-app.sh              build ./GroundControl.app
-#   ./build-app.sh --install    build it, then copy it to ~/Applications
+#   ./build-app.sh --install    build it, then copy it to /Applications
+#                               (falls back to ~/Applications if that is not
+#                               writable without a password)
 #   ./build-app.sh --clean      remove build/ and GroundControl.app, then stop
 #
-# Nothing here needs sudo, nothing is written outside this repo and
-# ~/Applications, and no toolchain beyond what macOS and Xcode already ship:
+# Nothing here needs sudo, nothing is written outside this repo and the
+# Applications folder it installs into, and no toolchain beyond what macOS and
+# Xcode already ship:
 # swiftc to compile, sips to rasterise the icon, iconutil to pack it.
 #
 set -euo pipefail
@@ -157,7 +160,19 @@ note "$BUNDLE"
 # ── 6. optional install ──────────────────────────────────────────────────────
 
 if [ "$INSTALL" -eq 1 ]; then
-  DEST="$HOME/Applications"
+  # /Applications, because that is the folder the Finder sidebar shows and the
+  # one people mean when they say "Applications". ~/Applications was the
+  # original target since it never needs a password, but an app installed there
+  # is invisible from the sidebar, which reads exactly like a failed build.
+  #
+  # On a normal Mac an admin user can write to /Applications without sudo. If
+  # this one cannot, fall back rather than fail: a copy in ~/Applications runs
+  # perfectly well, and the note below says where it went and why.
+  DEST="/Applications"
+  if [ ! -w "$DEST" ]; then
+    DEST="$HOME/Applications"
+    step "/Applications is not writable by $(id -un), falling back"
+  fi
   mkdir -p "$DEST"
   step "Installing to $DEST"
   rm -rf "$DEST/$APP_NAME.app"
@@ -165,6 +180,17 @@ if [ "$INSTALL" -eq 1 ]; then
   touch "$DEST/$APP_NAME.app"
   [ -x "$LSREG" ] && "$LSREG" -f "$DEST/$APP_NAME.app" 2>/dev/null || true
   note "$DEST/$APP_NAME.app"
+
+  # An earlier copy in the other folder would keep launching from Spotlight and
+  # the Dock long after this one replaced it, and the two are indistinguishable
+  # once open. Say so rather than deleting someone's file behind their back.
+  OTHER="$HOME/Applications/$APP_NAME.app"
+  [ "$DEST" = "$HOME/Applications" ] && OTHER="/Applications/$APP_NAME.app"
+  if [ -e "$OTHER" ]; then
+    step "An older copy is still at $OTHER"
+    note "Two copies now exist and only this one is current. Remove the old one with:"
+    note "    rm -rf \"$OTHER\""
+  fi
 fi
 
 # ── 7. what to expect ────────────────────────────────────────────────────────
