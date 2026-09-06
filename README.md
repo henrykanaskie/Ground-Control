@@ -156,6 +156,41 @@ session transcripts. It **observes only**: it never signals or kills an agent,
 never writes anything under `~/.claude`, and surfaces short status labels rather
 than your conversations.
 
+## Comms: talking to a project
+
+Every project page has a chat. Type a message and an agent starts in that
+project's folder: it reads the code, answers, and if you ask it to, changes
+things and runs commands there. Replies stream in a sentence at a time, with a
+compact strip of what it actually did (`Read agents.js`, `npm test`) between
+them, and a Stop control the whole time it is working.
+
+Two ways in. **A new chat** is a session Ground Control owns. **Continuing a
+session** picks one of the sessions the Agents panel already lists and carries
+its whole history into the chat: that one is a *fork*, always, so a session open
+in a terminal right now cannot be corrupted by two processes writing one
+transcript. You are talking to a copy that knows everything the original knows.
+
+There is no way to type into a running agent: a live `claude` process has no
+inbox. Continuing a session is the closest honest thing, and the panel says so.
+
+A chat's process is spawned into its own process group, so stopping it also
+reaches whatever its `Bash` calls left behind. That means it does not die with
+the server for free: the shutdown hook reaps it on a quit, a Ctrl+C, or an app
+force-quit (the app's watchdog sends SIGTERM, which the hook catches). A
+`kill -9` on the server gets past all of that, so the pid of a running turn is
+written down, and the next start finds that agent, checks it really is the one
+it thinks it is, stops it, and tells you the turn's agent had kept working
+rather than pretending it simply stopped.
+
+**A chat agent can edit files and run commands.** It runs with permissions
+bypassed, because headless mode has no terminal to answer a permission prompt
+in. So: every chat route refuses anyone who is not on this machine, the agent's
+folder comes from the scan rather than from the request, one turn runs at a
+time (three across the app, 20 minutes each), every child is killable and dies
+with the server, and the sentence saying all of this sits under the box you
+type into. Closing a chat forgets Ground Control's record of it and touches
+nothing under `~/.claude`.
+
 ## Reclaim: clearing out the dead ones
 
 Flags folders that never really started or were long abandoned, scored on
@@ -177,7 +212,7 @@ delete and no keyboard shortcut. Every removal is logged to
 ## Tests
 
 ```bash
-npm test          # 66 tests, ~3s, no dependencies
+npm test          # 99 tests, ~5s, no dependencies
 ```
 
 Node's built-in runner: no framework, nothing to install. The suite is
@@ -198,6 +233,11 @@ toward coverage percentage:
   folder is added after them, that the same folder reached two ways yields one
   card, that removal leaves the folder on disk untouched, and that the list
   survives a restart.
+- **That continuing a session always forks it.** A chat that resumed a session
+  in place would let two processes append to one transcript, and the loser of
+  that race loses work. The test asserts `--fork-session` is in the argv, that
+  later turns resume the fork rather than the original, and that a chat agent is
+  never handed a folder beyond the project it was opened on.
 - **Regressions from real bugs**: a root README losing to a nested `CLAUDE.md`;
   `#StockPortfolio` with no space leaking in as a blurb; virtualenv bulk counting
   as meaningful content; and a live agent process being reported as *working*
@@ -222,8 +262,9 @@ lib/house-style.js      art direction + the authoring prompt
 lib/artifact-*.js       the deterministic artifact and its components
 lib/agents.js           running-agent detection, transcript tails
 lib/editors.js          editor detection and launching
+lib/comms.js            per-project chats: the `claude` turn, streaming, the registry
 lib/reclaim.js          candidate scoring, safety blockers, trash
-public/js/app.js        routing, grid, detail, reader, all four features' UI
+public/js/app.js        routing, grid, detail, reader, every feature's UI
 public/js/markdown.js   from-scratch markdown renderer + highlighting
 public/css/             app.css (shell + tokens), doc.css (document typography)
 app/GroundControl.swift        the macOS application shell (AppKit + WKWebView)
@@ -241,16 +282,21 @@ CONTRACT*.md            the specs the build agents worked against
   three ways (syntactically, after `path.resolve`, and after `fs.realpath`) so a
   symlink pointing out of the folder returns 403.
 - One broken project cannot fail a scan.
-- Ground Control is read-only over your projects except for two explicitly confirmed
-  actions: saving a generated artifact, and moving a folder to Trash. Adding and
-  removing watched folders writes only to `~/.ground-control/sources.json`.
+- Ground Control is read-only over your projects except where you ask otherwise:
+  saving a generated artifact and moving a folder to Trash are both explicitly
+  confirmed, and a **Comms chat is a full agent** that edits files and runs
+  commands in the one project you opened it on. Everything else, scanning,
+  Forge, Reclaim's scoring, the Workbench, only reads. Adding and removing
+  watched folders writes only to `~/.ground-control/sources.json`, and chats
+  are indexed in `~/.ground-control/comms.json`.
 
 ## API
 
 `GET /api/projects` · `GET /api/project/:id` · `GET /api/doc` · `GET /api/raw` ·
 `GET /api/stream` · `GET/POST /api/forge/*` · `GET /api/editors` ·
 `POST /api/open` · `GET /api/agents[/:id]` · `GET /api/reclaim[/:id]` ·
-`POST /api/reclaim/:id/trash` · `GET/POST /api/sources` ·
+`POST /api/reclaim/:id/trash` · `GET/POST/DELETE /api/comms/*` ·
+`GET/POST /api/sources` ·
 `DELETE /api/sources/:id` · `POST /api/sources/{inspect,locate,reorder}` ·
 `GET /api/browse` · `POST /api/pick-folder`
 

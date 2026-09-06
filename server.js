@@ -193,6 +193,11 @@ async function getScan(fresh) {
       // passes through, so the grid, the detail view and the Reclaim sweep all
       // see `completed` without any of them knowing where marks are stored.
       MARKS.applyTo(payload.projects);
+      // CONTRACT-COMMS.md §3c: detaching a folder is how you revoke a chat
+      // agent's access to it, so its chats go with it. A chat mid-turn is left
+      // alone; `send` refuses on the next message anyway.
+      try { commslib.pruneMissing(new Set(payload.projects.map((x) => x.id))); }
+      catch { /* pruning must never fail a scan */ }
       if (generation === scanGeneration) cache = { payload, at: Date.now() };
       return payload;
     } catch (err) {
@@ -529,6 +534,11 @@ async function route(req, res) {
     return handleWorkbench(req, res, pathname, query);
   }
 
+  // Comms (CONTRACT-COMMS.md §4). Sending, stopping and closing are POSTs;
+  // the handler checks methods itself, and checks that the caller is on this
+  // machine before any of them.
+  if (pathname.startsWith('/api/comms/')) return handleComms(req, res, pathname);
+
   // Reclaim (CONTRACT-RECLAIM.md §5). Dispatched before the read-only method
   // guard because the trash route is a POST; the handler checks methods itself.
   if (pathname === '/api/reclaim' || pathname.startsWith('/api/reclaim/')) {
@@ -664,6 +674,12 @@ import('./lib/house-style.js')
 // child.kill() is synchronous so it still lands.
 for (const sig of ['SIGINT', 'SIGTERM', 'exit']) {
   process.on(sig, () => { try { jobslib.cancelAll(); } catch { /* ignore */ } });
+  // Comms children are detached into their own process groups, so they would
+  // outlive the server unless they are signalled here (CONTRACT-COMMS.md §3).
+  process.on(sig, () => {
+    try { commslib.stopAll(); } catch { /* ignore */ }
+    try { commslib.persistNow(); } catch { /* ignore */ }
+  });
 }
 
 /** Read and parse a JSON request body. Resolves to `{}` for an empty body. */
@@ -1159,6 +1175,20 @@ async function forgeSave(req, res, job) {
 import * as agentslib from './lib/agents.js';
 import * as editorslib from './lib/editors.js';
 
+/**
+ * PIDs an agent sweep must not report as the user's own agents: the `claude`
+ * processes Ground Control itself is running. Forge runs one per generation
+ * and Comms runs one per turn, both with their cwd inside the project being
+ * worked on, which to `ps` and `lsof` is exactly what an agent you opened
+ * yourself looks like. Both are shown by the panel that started them.
+ */
+function agentExcludePids() {
+  const pids = new Set();
+  try { for (const p of generate.forgePids()) pids.add(p); } catch { /* best effort */ }
+  try { for (const p of commslib.commsPids()) pids.add(p); } catch { /* comms may not be loaded yet */ }
+  return pids;
+}
+
 /** Agent sweep budget. Overrun returns partial data rather than a slow scan. */
 const AGENT_BUDGET_MS = 1500;
 /** How often the SSE watcher re-checks which projects have live agents. */
@@ -1177,7 +1207,7 @@ async function withAgents(payload) {
   try {
     map = await agentslib.agentActivity(payload.projects, {
       budgetMs: AGENT_BUDGET_MS,
-      excludePids: generate.forgePids(),      // never report Forge as the user's agent
+      excludePids: agentExcludePids(),      // never report our own children as the user's agents
     });
   } catch (err) {
     console.error('[workbench] agent sweep failed:', (err && err.message) || err);
@@ -1224,7 +1254,7 @@ async function withAgent(summary) {
   try {
     const map = await agentslib.agentActivity([summary], {
       budgetMs: AGENT_BUDGET_MS,
-      excludePids: generate.forgePids(),
+      excludePids: agentExcludePids(),
     });
     return Object.assign({}, summary, { agent: map.get(summary.id) || null });
   } catch {
@@ -1269,7 +1299,7 @@ async function pollAgentState() {
   try {
     const payload = await getScan(false);
     const map = await agentslib.agentActivity(payload.projects, {
-      budgetMs: AGENT_BUDGET_MS, fresh: true, excludePids: generate.forgePids(),
+      budgetMs: AGENT_BUDGET_MS, fresh: true, excludePids: agentExcludePids(),
     });
     const sig = agentSigOf(map);
     if (agentSignature !== null && sig !== agentSignature) {
@@ -1374,7 +1404,7 @@ async function workbenchAgentStop(req, res) {
   let map;
   try {
     map = await agentslib.agentActivity([project], {
-      budgetMs: AGENT_BUDGET_MS, fresh: true, excludePids: generate.forgePids(),
+      budgetMs: AGENT_BUDGET_MS, fresh: true, excludePids: agentExcludePids(),
     });
   } catch (err) {
     return sendError(res, 500, `could not read agent state: ${(err && err.message) || err}`);
@@ -1521,7 +1551,7 @@ async function workbenchAgents(res, query) {
   try {
     map = await agentslib.agentActivity(payload.projects, {
       budgetMs: AGENT_BUDGET_MS,
-      excludePids: generate.forgePids(),      // never report Forge as the user's agent
+      excludePids: agentExcludePids(),      // never report our own children as the user's agents
     });
   } catch (err) {
     console.error('[workbench] agent sweep failed:', (err && err.message) || err);
@@ -1550,6 +1580,249 @@ async function workbenchAgentDetail(res, id) {
     return sendError(res, 500, 'agent detail unavailable');
   }
   return sendJSON(res, 200, Object.assign({ projectId: project.id, projectName: project.name }, detail));
+}
+
+
+
+
+/* ================================================================== *
+ * GROUND_CONTROL COMMS: talk to an agent about one project (CONTRACT-COMMS.md §4)
+ *
+ * Appended below Workbench. Nothing above was restructured; `route()` gained
+ * one dispatch block for `/api/comms/`, and the agent sweeps' `excludePids`
+ * gained Comms' own children through `agentExcludePids()`.
+ *
+ * Safety posture, and it is the strongest in this file:
+ *
+ *   §3: a Comms agent is a FULL agent. It edits files and runs commands in the
+ *        project it is pointed at. That is what the user asked for, and it is
+ *        why every route below is LOOPBACK-ONLY without exception, including
+ *        the read ones. `server.listen(port)` binds every interface, so the
+ *        dashboard is reachable from the rest of the network; an endpoint that
+ *        spawns a shell-capable agent must not be. Sources draws this line for
+ *        read access. Comms draws it for everything.
+ *   §3a: the project must be one Ground Control currently watches, resolved
+ *        through `findProject`, and the agent's cwd is that project's own path.
+ *        A caller cannot nominate a directory.
+ *   §4: transcripts are the user's conversations. Nothing here writes under
+ *        ~/.claude, and closing a chat forgets Ground Control's record of it
+ *        and touches nothing on disk.
+ * ================================================================== */
+
+import * as commslib from './lib/comms.js';
+
+const COMMS_PING_MS = 25000;
+
+/* CONTRACT-COMMS.md §4a: a `kill -9` on this server gets past the shutdown
+ * hook, and a chat's child is in its own process group, so it survives. This
+ * is where that is found and stopped. */
+try {
+  const rec = commslib.hydrate();
+  if (rec.restored || rec.reaped) {
+    console.log(`[comms] restored ${rec.restored} chat(s)`
+      + (rec.interrupted ? `, ${rec.interrupted} interrupted by the restart` : '')
+      + (rec.reaped ? `, stopped ${rec.reaped} agent(s) that outlived the last server` : ''));
+  }
+} catch (err) {
+  console.error('[comms] chat restore failed:', (err && err.message) || err);
+}
+
+/**
+ * Loopback-only, and the message says why rather than just refusing. See the
+ * banner above: this is the one part of Ground Control that can change files
+ * and run commands, so it is available exactly where the person who owns the
+ * machine is sitting.
+ */
+const COMMS_LOCAL_ONLY =
+  'Chats can only be opened from the machine Ground Control is running on: a chat can edit files and run commands.';
+
+async function handleComms(req, res, pathname) {
+  if (!isLocalRequest(req)) return sendError(res, 403, COMMS_LOCAL_ONLY);
+
+  const rest = pathname.slice('/api/comms/'.length);
+
+  if (rest === 'status') {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return sendError(res, 405, 'method not allowed');
+    return commsStatus(res);
+  }
+
+  if (rest === 'start') {
+    if (req.method !== 'POST') return sendError(res, 405, 'method not allowed');
+    return commsStart(req, res);
+  }
+
+  if (rest.startsWith('project/')) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return sendError(res, 405, 'method not allowed');
+    const id = safeDecode(rest.slice('project/'.length));
+    if (id === null) return sendError(res, 400, 'bad request');
+    return sendJSON(res, 200, {
+      projectId: id,
+      chats: commslib.listForProject(id).map(commslib.summaryJSON),
+    });
+  }
+
+  if (rest.startsWith('chat/')) {
+    const parts = rest.slice('chat/'.length).split('/');
+    const chatId = safeDecode(parts[0] || '');
+    if (!chatId) return sendError(res, 400, 'bad request');
+    const action = parts[1] || '';
+
+    const chat = commslib.get(chatId);
+    if (!chat) return sendError(res, 404, 'unknown chat');
+
+    if (!action) {
+      if (req.method === 'GET' || req.method === 'HEAD') return sendJSON(res, 200, commslib.toJSON(chat));
+      if (req.method === 'DELETE') return sendJSON(res, 200, { ok: true, closed: chatId, chat: commslib.summaryJSON(commslib.remove(chatId)) });
+      return sendError(res, 405, 'method not allowed');
+    }
+    if (action === 'send') {
+      if (req.method !== 'POST') return sendError(res, 405, 'method not allowed');
+      return commsSend(req, res, chat);
+    }
+    if (action === 'stop') {
+      if (req.method !== 'POST') return sendError(res, 405, 'method not allowed');
+      return sendJSON(res, 200, commslib.toJSON(commslib.stop(chatId, 'stopped from the dashboard')));
+    }
+    if (action === 'stream') {
+      if (req.method !== 'GET') return sendError(res, 405, 'method not allowed');
+      return commsStream(req, res, chat);
+    }
+    return sendError(res, 404, 'unknown endpoint');
+  }
+
+  return sendError(res, 404, 'unknown endpoint');
+}
+
+/* ---- GET /api/comms/status ----------------------------------------- */
+
+function commsStatus(res) {
+  let claude = { available: false, version: null };
+  try { claude = generate.claudeAvailable(); } catch { /* reported as unavailable */ }
+  sendJSON(res, 200, {
+    available: Boolean(claude.available),
+    version: claude.version || null,
+    models: commslib.MODELS,
+    defaultModel: commslib.DEFAULT_MODEL,
+    maxConcurrent: commslib.MAX_CONCURRENT,
+    promptMax: commslib.PROMPT_MAX,
+    timeoutMinutes: Math.round(commslib.TURN_TIMEOUT_MS / 60000),
+    running: commslib.running().map(commslib.summaryJSON),
+    // Said plainly wherever it shows, per contract §3.
+    permissionNote: 'A chat agent works in the project folder with permissions bypassed: it can read, edit and create files, and run commands. Stop it any time.',
+    billingNote: 'Chats run through your authenticated Claude CLI and count toward your Claude subscription.',
+  });
+}
+
+/* ---- POST /api/comms/start ----------------------------------------- *
+ * Body: { projectId, sessionId?, model? }
+ *
+ * `sessionId` continues an existing session. It is passed to the CLI as an id
+ * and nothing else: no path is built from it here, and a wrong one fails as a
+ * missing session rather than reaching anything it should not.
+ * ------------------------------------------------------------------- */
+
+async function commsStart(req, res) {
+  let body;
+  try { body = await readJsonBody(req); }
+  catch (err) { return sendError(res, err.status || 400, err.message || 'bad request'); }
+
+  const projectId = typeof body.projectId === 'string' ? body.projectId : '';
+  if (!projectId) return sendError(res, 400, 'projectId is required');
+
+  // Guard §3a: the agent's cwd is a project Ground Control currently watches,
+  // taken from the scan, never from the request.
+  const project = await findProject(projectId);
+  if (!project) return sendError(res, 404, 'unknown project');
+
+  const sessionId = typeof body.sessionId === 'string' && /^[A-Za-z0-9._-]{6,200}$/.test(body.sessionId)
+    ? body.sessionId
+    : null;
+  if (body.sessionId && !sessionId) return sendError(res, 400, 'that is not a session id');
+
+  let chat;
+  try {
+    chat = commslib.startChat({
+      project,
+      resumeSessionId: sessionId,
+      model: typeof body.model === 'string' ? body.model : null,
+    });
+  } catch (err) {
+    return sendError(res, err.status || 500, err.message || 'the chat could not be opened');
+  }
+  return sendJSON(res, 201, commslib.toJSON(chat));
+}
+
+/* ---- POST /api/comms/chat/:id/send ---------------------------------- */
+
+async function commsSend(req, res, chat) {
+  let body;
+  try { body = await readJsonBody(req); }
+  catch (err) { return sendError(res, err.status || 400, err.message || 'bad request'); }
+
+  // The project must still be watched. Removing a folder is how you revoke
+  // this, so a chat against a folder that is gone must not still run in it.
+  const project = await findProject(chat.projectId);
+  if (!project) return sendError(res, 409, 'that project is no longer being watched');
+
+  try {
+    const { turn } = commslib.send(chat.id, body.text);
+    return sendJSON(res, 202, { chat: commslib.toJSON(chat), turnId: turn.id });
+  } catch (err) {
+    return sendError(res, err.status || 500, err.message || 'the message could not be sent');
+  }
+}
+
+/* ---- GET /api/comms/chat/:id/stream -------------------------------- *
+ * One SSE stream per open chat. `hello` replays the whole chat so a client
+ * that reconnects mid-turn is never behind, then `delta` carries the live tail
+ * of the current sentence and `turn` the settled structure.
+ * ------------------------------------------------------------------- */
+
+function commsStream(req, res, chat) {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+  let closed = false;
+  let unsubscribe = null;
+  let pingTimer = null;
+
+  const send = (event, data) => {
+    if (closed) return;
+    try { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); }
+    catch { cleanup(); }
+  };
+
+  const cleanup = () => {
+    if (closed) return;
+    closed = true;
+    if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+    if (unsubscribe) { try { unsubscribe(); } catch { /* ignore */ } unsubscribe = null; }
+    try { res.end(); } catch { /* ignore */ }
+  };
+
+  req.on('close', cleanup);
+  req.on('error', cleanup);
+  res.on('error', cleanup);
+  res.on('close', cleanup);
+
+  send('hello', { ok: true, chat: commslib.toJSON(chat) });
+
+  pingTimer = setInterval(() => send('ping', {}), COMMS_PING_MS);
+  if (typeof pingTimer.unref === 'function') pingTimer.unref();
+
+  // The stream stays open on an idle chat: the next message reuses it rather
+  // than reconnecting, which is what keeps the first token fast.
+  unsubscribe = commslib.subscribe(chat.id, (event, updated, turn) => {
+    if (closed) return;
+    if (event === 'delta') return send('delta', { turnId: turn.id, partial: turn.partial || '' });
+    if (event === 'settled') return send('settled', commslib.toJSON(updated));
+    send('turn', { chat: commslib.summaryJSON(updated), turn: commslib.turnJSON(turn) });
+  });
 }
 
 

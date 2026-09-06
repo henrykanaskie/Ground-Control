@@ -1839,3 +1839,168 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
   .dropzone-i{animation:none}
   .src-btn,.src-btn-c,.src-d-kind,.src-item-x{transition:none}
 }
+
+/* ============================================================================
+ * COMMS: talking to an agent about one project (CONTRACT-COMMS.md §5)
+ *
+ * A chat is the one panel here you look at for minutes rather than seconds, so
+ * it gets a fixed-height scrolling log rather than growing the page without
+ * limit, and the composer stays put at the bottom of it.
+ * ========================================================================= */
+
+.cm .panel-b.cm-b{padding:0}
+.cm-boot{padding:22px 16px;font-size:12.5px;color:var(--text-3);text-align:center}
+
+/* the row of chats */
+.cm-bar{
+  display:flex;align-items:center;gap:8px;
+  padding:8px 10px 8px 12px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,rgba(255,255,255,.012),transparent);
+}
+.cm-tabs{display:flex;gap:6px;flex:1;min-width:0;overflow-x:auto;scrollbar-width:none}
+.cm-tabs::-webkit-scrollbar{display:none}
+.cm-tab{
+  display:flex;align-items:center;gap:6px;flex:none;max-width:220px;
+  height:26px;padding:0 10px;font:inherit;font-size:11.5px;
+  background:transparent;border:1px solid transparent;border-radius:99px;
+  color:var(--text-3);cursor:pointer;
+}
+.cm-tab span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cm-tab:hover{color:var(--text-2);border-color:var(--line)}
+.cm-tab.is-on{color:var(--text);background:var(--panel-2);border-color:var(--line-2)}
+.cm-acts{display:flex;gap:4px;flex:none}
+.cm-icbtn{
+  display:grid;place-items:center;width:26px;height:26px;
+  background:transparent;border:1px solid transparent;border-radius:var(--radius-xs);
+  color:var(--text-3);cursor:pointer;
+}
+.cm-icbtn:hover{color:var(--text-2);background:var(--panel-2);border-color:var(--line)}
+.cm-icbtn .icon{width:13px;height:13px}
+
+/* the "no chat yet" state: one sentence and one button, per §5 */
+.cm-blank{padding:26px 20px 24px;text-align:center}
+.cm-blank p{max-width:52ch;margin:0 auto 14px;font-size:12.5px;line-height:1.65;color:var(--text-3)}
+
+/* the conversation */
+.cm-log{
+  max-height:min(56vh,540px);overflow-y:auto;overscroll-behavior:contain;
+  padding:14px 16px;display:flex;flex-direction:column;gap:14px;
+}
+.cm-empty{font-size:12.5px;color:var(--text-3);text-align:center;padding:16px 0}
+.cm-seed{
+  font-size:11.5px;line-height:1.6;color:var(--text-3);
+  padding:9px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);
+  background:var(--bg-2);
+}
+.cm-seed.is-warn{border-color:#5a4218;color:#d3a45a}
+
+.cm-msg{display:flex;flex-direction:column;gap:6px;min-width:0}
+.cm-who{
+  display:flex;align-items:center;gap:7px;
+  font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);
+}
+.cm-dur{font-size:10px;letter-spacing:0;text-transform:none;color:var(--empty)}
+.cm-msg.is-you .cm-text{
+  background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-sm);
+  padding:9px 12px;white-space:pre-wrap;
+}
+.cm-text{font-size:13px;line-height:1.7;color:var(--text);min-width:0;overflow-wrap:anywhere}
+.cm-text.is-plain{white-space:pre-wrap}
+
+/* the reader's markdown, shrunk to chat size */
+.cm-text.ground-control-doc{max-width:none;padding:0;font-size:13px;line-height:1.7}
+.cm-text.ground-control-doc p{margin:0 0 8px;font-size:13px;line-height:1.7}
+.cm-text.ground-control-doc > :last-child{margin-bottom:0}
+.cm-text.ground-control-doc h1,
+.cm-text.ground-control-doc h2,
+.cm-text.ground-control-doc h3,
+.cm-text.ground-control-doc h4{margin:12px 0 6px;font-size:13px;line-height:1.4;border:0;padding:0}
+.cm-text.ground-control-doc ul,
+.cm-text.ground-control-doc ol{margin:0 0 8px;padding-left:20px}
+.cm-text.ground-control-doc li{margin:2px 0;font-size:13px;line-height:1.6}
+.cm-text.ground-control-doc pre{margin:8px 0;font-size:11.5px;line-height:1.55;max-height:280px}
+.cm-text.ground-control-doc code{font-size:11.5px}
+.cm-text.ground-control-doc table{font-size:12px;display:block;overflow-x:auto}
+.cm-text.ground-control-doc blockquote{margin:8px 0;font-size:12.5px}
+
+/* the live tail of the sentence being written */
+.cm-text.is-live{color:var(--text-2)}
+.cm-text.is-live::after{
+  content:"";display:inline-block;width:6px;height:13px;margin-left:2px;
+  vertical-align:-2px;background:var(--ember);opacity:.75;
+  animation:cm-caret 1.05s steps(1) infinite;
+}
+@keyframes cm-caret{0%,49%{opacity:.75}50%,100%{opacity:0}}
+
+/* what the agent did, between the sentences */
+.cm-tools{display:flex;flex-direction:column;gap:1px;margin:1px 0}
+.cm-tool{
+  display:flex;align-items:baseline;gap:8px;min-width:0;
+  padding:3px 9px;border-left:2px solid var(--line-2);
+  font-size:11.5px;color:var(--text-3);
+}
+.cm-tname{font-family:var(--mono);font-size:10px;color:var(--ember-2);flex:none}
+.cm-tlabel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.cm-tool.is-bad{border-left-color:#7a3838}
+.cm-tool.is-bad .cm-tname{color:#f8a4a4}
+
+.cm-think{font-size:12px;color:var(--text-3);font-style:italic}
+.cm-note{font-size:11px;color:var(--empty)}
+.cm-err{
+  font-size:12px;line-height:1.6;color:#f8a4a4;
+  padding:8px 11px;border:1px solid #5a2a2a;border-radius:var(--radius-sm);
+  background:rgba(248,113,113,.07);
+}
+.cm-err.is-soft{color:var(--text-3);border-color:var(--line);background:var(--bg-2)}
+
+/* a running turn, in the log and in the tab */
+.cm-dot{
+  width:6px;height:6px;flex:none;border-radius:50%;background:var(--ember);
+  animation:cm-pulse 1.4s ease-in-out infinite;
+}
+@keyframes cm-pulse{0%,100%{opacity:.35;transform:scale(.82)}50%{opacity:1;transform:scale(1)}}
+
+/* composing */
+.cm-compose{padding:12px 16px 10px;border-top:1px solid var(--line);background:var(--bg-2)}
+.cm-input{
+  display:block;width:100%;min-height:46px;max-height:200px;resize:none;
+  padding:10px 12px;font:inherit;font-size:13px;line-height:1.6;
+  color:var(--text);background:var(--panel);
+  border:1px solid var(--line);border-radius:var(--radius-sm);
+}
+.cm-input::placeholder{color:var(--empty)}
+.cm-input:hover:not(:disabled){border-color:var(--line-2)}
+.cm-input:focus{outline:none;border-color:var(--ember-2);box-shadow:0 0 0 3px var(--ember-glow)}
+.cm-input:disabled{opacity:.55;cursor:default}
+.cm-row{display:flex;align-items:center;gap:10px;margin-top:8px}
+.cm-cerr{flex:1;min-width:0;font-size:11.5px;line-height:1.5;color:#f8a4a4}
+.cm-cerr[hidden]{display:none}
+.cm-row .btn{margin-left:auto}
+.cm-cerr:not([hidden]) + .btn{margin-left:0}
+
+/* the line that says what a chat agent may do */
+.cm-safety{
+  display:flex;align-items:flex-start;gap:8px;
+  padding:9px 16px 12px;font-size:11px;line-height:1.6;color:var(--text-3);
+  background:var(--bg-2);
+}
+.cm-safety .icon{width:13px;height:13px;flex:none;margin-top:1px;color:var(--ember-2)}
+
+/* continuing a session, from the Agents panel */
+.cm-cont{
+  display:inline-flex;align-items:center;gap:5px;flex:none;
+  height:22px;padding:0 8px;font:inherit;font-size:10.5px;
+  background:transparent;border:1px solid var(--line);border-radius:99px;
+  color:var(--text-3);cursor:pointer;
+}
+.cm-cont:hover:not([disabled]){color:var(--ember);border-color:var(--ember-2);background:rgba(245,158,11,.07)}
+.cm-cont[disabled]{opacity:.55;cursor:default}
+.cm-cont .icon{width:11px;height:11px}
+
+@media (prefers-reduced-motion:reduce){
+  .cm-dot,.cm-text.is-live::after{animation:none}
+}
+@media (max-width:640px){
+  .cm-log{max-height:64vh}
+  .cm-tab{max-width:140px}
+}

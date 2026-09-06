@@ -1005,6 +1005,9 @@ function paintDetail(box, d) {
   /* ── Forge (CONTRACT-FORGE.md §9) ── */
   box.append(forgePanel(d));
 
+  /* ── Comms (CONTRACT-COMMS.md §5) ── */
+  box.append(commsPanel(d));
+
   /* ── two columns ── */
   const grid = h('div', 'dgrid');
   const left = h('div', null);
@@ -2858,6 +2861,7 @@ function onLocationChange() {
   state.routeKey = nextKey;
 
   if (next.view !== 'reader') teardownReader();
+  if (next.view !== 'detail') cmTeardown();            // Comms §5
 
   el.viewGrid.hidden = next.view !== 'grid';
   el.viewDetail.hidden = next.view !== 'detail';
@@ -3746,6 +3750,7 @@ function wbPaintAgents(p, body, d, data) {
       if (typeof s.messageCount === 'number') meta.push(fmtNum(s.messageCount) + ' msgs');
       if (typeof s.sizeBytes === 'number') meta.push(fmtBytes(s.sizeBytes));
       row.append(h('span', 'wb-smeta', meta.join(' · ')));
+      if (s.id) row.append(cmContinueButton(s.id));   // Comms §5
       box.append(row);
     }
     body.append(box);
@@ -5857,4 +5862,616 @@ function cmplApply(id, data) {
 
   const card = state.cards.get(id);
   if (card && p) fillCard(card, p);
+}
+
+
+/* ============================================================================
+ * GROUND_CONTROL COMMS: talking to an agent about one project
+ * (CONTRACT-COMMS.md §5)
+ *
+ * Appended below the Workbench UI. Three edits above this line: the detail
+ * view mounts `commsPanel()`, the Agents panel's session rows gained a
+ * "continue" button, and `onLocationChange` tears the stream down on leaving.
+ *
+ * Two rules shape everything here:
+ *   §3: a chat agent can edit files and run commands. That is said in plain
+ *        words next to the box you type into, not buried in a tooltip, and the
+ *        Stop control is present whenever a turn is running.
+ *   §5: a project with no chat renders one line and a button. The panel earns
+ *        its space only once there is a conversation in it.
+ * ========================================================================= */
+
+const CM_BACKOFF = [1000, 2000, 5000, 15000];
+
+const cm = {
+  status: null,
+  statusAt: 0,
+  statusPromise: null,
+  lists: new Map(),      // projectId -> [ChatSummary]
+  active: new Map(),     // projectId -> chatId
+  full: new Map(),       // chatId -> Chat (with turns)
+  drafts: new Map(),     // chatId -> unsent text
+  es: null,
+  esChatId: null,
+  esAttempt: 0,
+  esTimer: 0,
+  token: 0,              // the detailToken this panel belongs to
+  node: null,            // the mounted panel, or null
+};
+
+/* ── transport ────────────────────────────────────────────────────────── */
+
+function cmPost(url, payload, method) {
+  return fetch(url, {
+    method: method || 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: payload === undefined ? undefined : JSON.stringify(payload || {}),
+  }).then(async (res) => {
+    let body = null;
+    try { body = await res.json(); } catch { /* empty or non-JSON */ }
+    if (!res.ok) throw Object.assign(new Error((body && body.error) || ('HTTP ' + res.status)), { status: res.status });
+    return body || {};
+  });
+}
+
+function loadCommsStatus() {
+  if (cm.status && Date.now() - cm.statusAt < 60000) return Promise.resolve(cm.status);
+  if (cm.statusPromise) return cm.statusPromise;
+  cm.statusPromise = getJSON('/api/comms/status')
+    .then((s) => { cm.status = s; cm.statusAt = Date.now(); cm.statusPromise = null; return s; })
+    .catch((err) => {
+      cm.status = { available: false, unavailable: err.message || 'unreachable' };
+      cm.statusAt = Date.now();
+      cm.statusPromise = null;
+      return cm.status;
+    });
+  return cm.statusPromise;
+}
+
+/* ── the panel ────────────────────────────────────────────────────────── */
+
+function commsPanel(d) {
+  const p = panel('Talk to this project', 'i-comms', '');
+  p.classList.add('cm');
+  const body = p._body;
+  body.classList.add('cm-b');
+  body.append(h('div', 'cm-boot', 'Looking for the Claude CLI…'));
+
+  cm.node = p;
+  cm.token = state.detailToken;
+  cm.projectId = d.id;
+  cm.projectName = d.name || d.id;
+
+  Promise.all([loadCommsStatus(), cmLoadList(d.id), loadMarkdown().catch(() => null)])
+    .then(() => { if (cmStale()) return; cmPaint(); })
+    .catch(() => {
+      if (cmStale()) return;
+      clear(body);
+      body.append(h('div', 'panel-note', 'The chat panel could not start.'));
+    });
+
+  return p;
+}
+
+/** True once the detail view has moved on and this panel is a ghost. */
+function cmStale() {
+  return !cm.node || cm.token !== state.detailToken || !cm.node.isConnected;
+}
+
+function cmLoadList(projectId) {
+  return getJSON('/api/comms/project/' + encodeURIComponent(projectId))
+    .then((r) => {
+      const list = Array.isArray(r.chats) ? r.chats : [];
+      cm.lists.set(projectId, list);
+      if (!cm.active.has(projectId) && list.length) cm.active.set(projectId, list[0].id);
+      const active = cm.active.get(projectId);
+      if (active && !list.some((c) => c.id === active)) cm.active.delete(projectId);
+      return list;
+    })
+    .catch(() => { cm.lists.set(projectId, []); return []; });
+}
+
+function cmActiveChat() {
+  const id = cm.active.get(cm.projectId);
+  return id ? (cm.full.get(id) || null) : null;
+}
+
+/**
+ * Repaint the whole panel. Cheap enough at these sizes, and it means there is
+ * exactly one function that decides what the panel looks like for a given
+ * state rather than a dozen incremental updates that can disagree.
+ */
+function cmPaint() {
+  if (cmStale()) return;
+  const p = cm.node;
+  const body = p._body;
+  clear(body);
+
+  const status = cm.status || {};
+  if (!status.available) {
+    body.append(h('div', 'panel-note',
+      status.unavailable
+        ? 'The chat service is not reachable: ' + status.unavailable
+        : 'The `claude` CLI is not available on this machine, so there is nothing to talk to here.'));
+    return;
+  }
+
+  const list = cm.lists.get(cm.projectId) || [];
+  const activeId = cm.active.get(cm.projectId) || null;
+  const chat = activeId ? cm.full.get(activeId) : null;
+
+  const count = p.querySelector('.panel-h .n');
+  if (count) count.textContent = list.length ? (list.length === 1 ? '1 chat' : list.length + ' chats') : '';
+
+  body.append(cmBar(list, activeId));
+
+  if (!activeId) {
+    const blank = h('div', 'cm-blank');
+    blank.append(h('p', null,
+      'Open a chat and an agent starts in this project’s folder. It can read the code, change it, and run commands here.'));
+    const b = h('button', 'btn cm-start');
+    b.type = 'button';
+    b.append(icon('i-comms'), h('span', null, 'Start a chat'));
+    b.addEventListener('click', () => cmStart({}));
+    blank.append(b);
+    body.append(blank);
+    body.append(cmSafetyLine());
+    return;
+  }
+
+  if (!chat) {
+    body.append(h('div', 'cm-boot', 'Opening the chat…'));
+    cmLoadChat(activeId);
+    return;
+  }
+
+  body.append(cmLog(chat));
+  body.append(cmComposer(chat));
+  body.append(cmSafetyLine());
+  cmOpenStream(activeId);
+}
+
+/* ── the bar of chats ─────────────────────────────────────────────────── */
+
+function cmBar(list, activeId) {
+  const bar = h('div', 'cm-bar');
+
+  const tabs = h('div', 'cm-tabs');
+  for (const c of list) {
+    const t = h('button', 'cm-tab' + (c.id === activeId ? ' is-on' : ''));
+    t.type = 'button';
+    t.title = (c.resumeFrom ? 'Continued from session ' + c.resumeFrom.slice(0, 8) + ' · ' : '')
+      + 'started ' + fmtDate(c.createdISO);
+    if (c.state === 'running') t.append(h('i', 'cm-dot'));
+    t.append(h('span', null, c.title || 'Chat'));
+    t.addEventListener('click', () => {
+      if (c.id === activeId) return;
+      cm.active.set(cm.projectId, c.id);
+      cmCloseStream();
+      cmPaint();
+    });
+    tabs.append(t);
+  }
+  bar.append(tabs);
+
+  const acts = h('div', 'cm-acts');
+  if (activeId) {
+    const close = h('button', 'cm-icbtn');
+    close.type = 'button';
+    close.title = 'Close this chat. The conversation stays on disk under ~/.claude; only Ground Control’s record of it goes.';
+    close.setAttribute('aria-label', 'Close this chat');
+    close.append(icon('i-x'));
+    close.addEventListener('click', () => cmClose(activeId));
+    acts.append(close);
+  }
+  const add = h('button', 'cm-icbtn');
+  add.type = 'button';
+  add.title = 'Start another chat in this project';
+  add.setAttribute('aria-label', 'New chat');
+  add.append(icon('i-plus'));
+  add.addEventListener('click', () => cmStart({}));
+  acts.append(add);
+  bar.append(acts);
+
+  return bar;
+}
+
+/* ── the conversation ─────────────────────────────────────────────────── */
+
+function cmLog(chat) {
+  const log = h('div', 'cm-log');
+  log.id = 'cm-log';
+
+  if (chat.resumeFrom) {
+    log.append(h('div', 'cm-seed',
+      'Continuing session ' + String(chat.resumeFrom).slice(0, 8)
+      + '. This is a fork: it carries that conversation’s history, and writing here cannot disturb the original.'));
+  }
+  if (chat.interrupted) {
+    log.append(h('div', 'cm-seed is-warn',
+      'Ground Control restarted while this chat was mid-answer. The conversation is intact; send the message again.'));
+  }
+
+  const turns = Array.isArray(chat.turns) ? chat.turns : [];
+  if (!turns.length) {
+    log.append(h('div', 'cm-empty', 'Nothing said yet.'));
+    return log;
+  }
+
+  for (const t of turns) log.append(t.role === 'user' ? cmYou(t) : cmAgent(t));
+  return log;
+}
+
+function cmYou(t) {
+  const m = h('div', 'cm-msg is-you');
+  m.append(h('div', 'cm-who', 'you'));
+  m.append(h('div', 'cm-text', t.text || ''));
+  return m;
+}
+
+function cmAgent(t) {
+  const m = h('div', 'cm-msg is-agent');
+  m.dataset.turn = t.id;
+  const who = h('div', 'cm-who');
+  who.append(h('span', null, 'agent'));
+  if (t.state === 'running') who.append(h('i', 'cm-dot'));
+  if (t.durationMs) who.append(h('span', 'cm-dur', wbFmtUptime(t.durationMs)));
+  m.append(who);
+
+  const steps = Array.isArray(t.steps) ? t.steps : [];
+  let run = null;                        // consecutive tool calls collapse into one strip
+  for (const s of steps) {
+    if (s.kind === 'tool') {
+      if (!run) { run = h('div', 'cm-tools'); m.append(run); }
+      const row = h('div', 'cm-tool' + (s.state === 'failed' ? ' is-bad' : ''));
+      row.append(h('span', 'cm-tname', s.name || 'tool'));
+      row.append(h('span', 'cm-tlabel', s.label || ''));
+      run.append(row);
+    } else {
+      run = null;
+      m.append(cmProse(s.text || ''));
+    }
+  }
+
+  if (t.partial) m.append(cmLive(t.partial));
+  if (t.truncated) m.append(h('div', 'cm-note', 'Earlier steps in this turn were dropped to keep the panel light.'));
+
+  if (t.state === 'running' && !steps.length && !t.partial) {
+    m.append(h('div', 'cm-think', 'thinking…'));
+  }
+  if (t.error) {
+    m.append(h('div', 'cm-err' + (t.state === 'cancelled' ? ' is-soft' : ''), t.error));
+  }
+  return m;
+}
+
+/**
+ * One block of the agent's prose. Markdown when the renderer is loaded, plain
+ * wrapped text when it is not: an answer must never be lost to a missing
+ * module. markdown.js guarantees escaped-safe HTML, which is why innerHTML is
+ * allowed here and nowhere else in this section.
+ */
+function cmProse(text) {
+  const n = h('div', 'cm-text');
+  if (mdModule) {
+    // `ground-control-doc` gives lists, code blocks and tables the reader's
+    // styling; `.cm-text` shrinks it back to chat size on top of that.
+    n.className = 'cm-text ground-control-doc';
+    try { n.innerHTML = mdModule.render(String(text)); return n; }
+    catch { /* fall through to plain text */ }
+  }
+  n.className = 'cm-text is-plain';
+  n.textContent = String(text);
+  return n;
+}
+
+/**
+ * The tail of the sentence being written right now. Deliberately never run
+ * through markdown: half a fenced code block or an unclosed emphasis renders
+ * as garbage, and it would reflow on every frame.
+ */
+function cmLive(text) {
+  const n = h('div', 'cm-text is-plain is-live');
+  n.textContent = String(text || '');
+  return n;
+}
+
+/* ── composing ────────────────────────────────────────────────────────── */
+
+function cmComposer(chat) {
+  const wrap = h('div', 'cm-compose');
+  const running = chat.state === 'running';
+
+  const ta = h('textarea', 'cm-input');
+  ta.rows = 2;
+  ta.placeholder = running
+    ? 'The agent is working. Stop it, or wait.'
+    : 'Ask about this project, or tell the agent what to change…';
+  ta.value = cm.drafts.get(chat.id) || '';
+  ta.disabled = running;
+  ta.addEventListener('input', () => {
+    cm.drafts.set(chat.id, ta.value);
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(200, Math.max(46, ta.scrollHeight)) + 'px';
+  });
+  ta.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Enter' || ev.shiftKey || ev.isComposing) return;
+    ev.preventDefault();
+    cmSend(chat.id, ta.value);
+  });
+  wrap.append(ta);
+
+  const row = h('div', 'cm-row');
+  const err = h('div', 'cm-cerr');
+  err.hidden = true;
+  row.append(err);
+
+  if (running) {
+    const stop = h('button', 'btn cm-stop');
+    stop.type = 'button';
+    stop.append(icon('i-stop'), h('span', null, 'Stop'));
+    stop.addEventListener('click', () => {
+      stop.disabled = true;
+      cmPost('/api/comms/chat/' + encodeURIComponent(chat.id) + '/stop')
+        .catch(() => { stop.disabled = false; });
+    });
+    row.append(stop);
+  } else {
+    const send = h('button', 'btn btn-primary cm-send');
+    send.type = 'button';
+    send.append(icon('i-send'), h('span', null, 'Send'));
+    send.addEventListener('click', () => cmSend(chat.id, ta.value));
+    row.append(send);
+  }
+  wrap.append(row);
+
+  cm.errNode = err;
+  if (!running) setTimeout(() => { try { ta.focus(); } catch { /* ignore */ } }, 0);
+  return wrap;
+}
+
+function cmShowError(message) {
+  const n = cm.errNode;
+  if (!n) return;
+  n.textContent = message;
+  n.hidden = false;
+}
+
+/**
+ * The one line that says what a chat agent is allowed to do. It sits under the
+ * composer on every state of this panel, because a control that can edit your
+ * files should not require you to have read a contract to know that
+ * (CONTRACT-COMMS.md §3).
+ */
+function cmSafetyLine() {
+  const n = h('div', 'cm-safety');
+  n.append(icon('i-shield'));
+  const t = h('span', null,
+    'A chat agent works in this folder with permissions bypassed: it can read, edit and create files, and run commands. '
+    + 'It runs on your Claude subscription, and only this machine can open one.');
+  n.append(t);
+  return n;
+}
+
+/* ── actions ──────────────────────────────────────────────────────────── */
+
+function cmStart(opts) {
+  const projectId = cm.projectId;
+  return cmPost('/api/comms/start', {
+    projectId,
+    sessionId: opts && opts.sessionId ? opts.sessionId : undefined,
+  })
+    .then((chat) => {
+      cm.full.set(chat.id, chat);
+      const list = cm.lists.get(projectId) || [];
+      cm.lists.set(projectId, [chat].concat(list));
+      cm.active.set(projectId, chat.id);
+      cmCloseStream();
+      if (!cmStale()) cmPaint();
+      return chat;
+    })
+    .catch((err) => {
+      if (!cmStale()) cmShowError(err.message || 'the chat could not be opened');
+      throw err;
+    });
+}
+
+function cmLoadChat(id) {
+  return getJSON('/api/comms/chat/' + encodeURIComponent(id))
+    .then((chat) => { cm.full.set(id, chat); if (!cmStale()) cmPaint(); return chat; })
+    .catch((err) => {
+      if (err.status === 404) {
+        cm.active.delete(cm.projectId);
+        cm.lists.set(cm.projectId, (cm.lists.get(cm.projectId) || []).filter((c) => c.id !== id));
+      }
+      if (!cmStale()) cmPaint();
+    });
+}
+
+function cmSend(id, text) {
+  const body = String(text || '').trim();
+  if (!body) return;
+  const chat = cm.full.get(id);
+  if (!chat || chat.state === 'running') return;
+
+  // Paint the message immediately: waiting for the round trip to see your own
+  // words is the thing that makes a chat feel broken.
+  chat.turns = (chat.turns || []).concat([
+    { id: 'local', role: 'user', text: body, atISO: new Date().toISOString(), state: 'done' },
+    { id: 'local-a', role: 'agent', atISO: new Date().toISOString(), state: 'running', steps: [], partial: '' },
+  ]);
+  chat.state = 'running';
+  cm.drafts.delete(id);
+  cmPaint();
+  cmScrollLog(true);
+
+  cmPost('/api/comms/chat/' + encodeURIComponent(id) + '/send', { text: body })
+    .then((r) => {
+      if (r && r.chat) cm.full.set(id, r.chat);
+      if (!cmStale()) { cmPaint(); cmScrollLog(); }
+    })
+    .catch((err) => {
+      chat.state = 'idle';
+      chat.turns = chat.turns.filter((t) => t.id !== 'local-a');
+      cm.drafts.set(id, body);
+      if (!cmStale()) { cmPaint(); cmShowError(err.message || 'the message could not be sent'); }
+    });
+}
+
+function cmClose(id) {
+  const projectId = cm.projectId;
+  cmCloseStream();
+  return cmPost('/api/comms/chat/' + encodeURIComponent(id), undefined, 'DELETE')
+    .catch(() => {})
+    .then(() => {
+      cm.full.delete(id);
+      cm.drafts.delete(id);
+      const list = (cm.lists.get(projectId) || []).filter((c) => c.id !== id);
+      cm.lists.set(projectId, list);
+      if (cm.active.get(projectId) === id) {
+        if (list.length) cm.active.set(projectId, list[0].id);
+        else cm.active.delete(projectId);
+      }
+      if (!cmStale()) cmPaint();
+    });
+}
+
+/**
+ * Follow the conversation, but only if the reader is already at the bottom.
+ * Yanking the log back down while someone is reading an earlier answer is the
+ * single most irritating thing a streaming chat can do.
+ */
+function cmScrollLog(force) {
+  const log = cm.node && cm.node.querySelector('.cm-log');
+  if (!log) return;
+  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+  if (force || atBottom) log.scrollTop = log.scrollHeight;
+}
+
+/* ── the live stream ──────────────────────────────────────────────────── */
+
+function cmCloseStream() {
+  if (cm.es) { try { cm.es.close(); } catch { /* ignore */ } }
+  cm.es = null;
+  cm.esChatId = null;
+  clearTimeout(cm.esTimer);
+  cm.esTimer = 0;
+}
+
+function cmTeardown() {
+  cmCloseStream();
+  cm.node = null;
+  cm.errNode = null;
+}
+
+function cmOpenStream(chatId) {
+  if (cm.esChatId === chatId && cm.es) return;
+  cmCloseStream();
+  if (!chatId || cmStale()) return;
+
+  let src;
+  try { src = new EventSource('/api/comms/chat/' + encodeURIComponent(chatId) + '/stream'); }
+  catch { return; }
+  cm.es = src;
+  cm.esChatId = chatId;
+
+  const mine = () => cm.es === src && !cmStale();
+
+  src.addEventListener('open', () => { if (mine()) cm.esAttempt = 0; });
+
+  src.addEventListener('hello', (ev) => {
+    if (!mine()) return;
+    let data = null;
+    try { data = JSON.parse(ev.data); } catch { return; }
+    if (data && data.chat) { cm.full.set(chatId, data.chat); cmPaint(); cmScrollLog(); }
+  });
+
+  /* A delta is the live tail of the sentence being written. It touches one
+   * node rather than repainting the log: this fires several times a second. */
+  src.addEventListener('delta', (ev) => {
+    if (!mine()) return;
+    let data = null;
+    try { data = JSON.parse(ev.data); } catch { return; }
+    const chat = cm.full.get(chatId);
+    if (!chat || !data) return;
+    const turn = (chat.turns || []).slice().reverse().find((t) => t.role === 'agent' && t.state === 'running');
+    if (!turn) return;
+    turn.partial = data.partial || '';
+    const live = cm.node ? cm.node.querySelectorAll('.cm-msg.is-agent .cm-text.is-live') : [];
+    const node = live.length ? live[live.length - 1] : null;
+    if (node) {
+      node.textContent = turn.partial;
+      cmScrollLog();
+    } else {
+      cmPaint();
+      cmScrollLog();
+    }
+  });
+
+  src.addEventListener('turn', (ev) => {
+    if (!mine()) return;
+    let data = null;
+    try { data = JSON.parse(ev.data); } catch { return; }
+    const chat = cm.full.get(chatId);
+    if (!chat || !data || !data.turn) return;
+    const at = (chat.turns || []).findIndex((t) => t.id === data.turn.id || t.id === 'local-a');
+    if (at === -1) chat.turns.push(data.turn); else chat.turns[at] = data.turn;
+    if (data.chat) Object.assign(chat, data.chat, { turns: chat.turns });
+    cmPaint();
+    cmScrollLog();
+  });
+
+  src.addEventListener('settled', (ev) => {
+    if (!mine()) return;
+    let data = null;
+    try { data = JSON.parse(ev.data); } catch { return; }
+    if (data) cm.full.set(chatId, data);
+    // Titles and state live in the bar, which is drawn from the list.
+    const list = (cm.lists.get(cm.projectId) || []).map((c) => (c.id === chatId && data
+      ? Object.assign({}, c, { title: data.title, state: data.state, updatedISO: data.updatedISO })
+      : c));
+    cm.lists.set(cm.projectId, list);
+    cmPaint();
+    cmScrollLog();
+  });
+
+  src.addEventListener('error', () => {
+    if (cm.es !== src) return;
+    cmCloseStream();
+    if (cmStale()) return;
+    const wait = CM_BACKOFF[Math.min(cm.esAttempt, CM_BACKOFF.length - 1)];
+    cm.esAttempt++;
+    cm.esTimer = setTimeout(() => { if (!cmStale()) cmOpenStream(chatId); }, wait);
+  });
+}
+
+/* ── continuing a session from the Agents panel ───────────────────────── */
+
+/**
+ * The button on each session row. Forking is stated in the tooltip because the
+ * difference matters: you are not typing into that terminal, you are talking
+ * to a copy of the conversation that carries its context.
+ */
+function cmContinueButton(sessionId) {
+  const b = h('button', 'cm-cont');
+  b.type = 'button';
+  b.append(icon('i-comms'), h('span', null, 'continue'));
+  b.title = 'Open a chat that carries this session’s history. It forks the session, so anything you do here '
+    + 'cannot disturb the original, even if it is open in a terminal right now.';
+  b.addEventListener('click', () => {
+    b.disabled = true;
+    const span = b.querySelector('span');
+    span.textContent = 'opening…';
+    cmStart({ sessionId })
+      .then(() => {
+        const p = cm.node;
+        if (p && p.scrollIntoView) p.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      })
+      .catch((err) => {
+        b.disabled = false;
+        span.textContent = 'failed';
+        b.title = String((err && err.message) || err);
+      });
+  });
+  return b;
 }
