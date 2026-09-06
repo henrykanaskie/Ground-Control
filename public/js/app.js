@@ -598,6 +598,8 @@ function signature(p) {
     p.forge && p.forge.running ? 'forge:' + p.forge.jobId + ':' + p.forge.kind : '',
     // Sources §5: the provenance chip appears, disappears and renames.
     (p.sourceId || '') + ':' + (srcMulti() ? (p.sourceLabel || '') : ''),
+    // Complete §4: marking and unmarking must repaint the card.
+    p.completed ? 'done' : '',
   ].join('\u0001');
 }
 
@@ -607,6 +609,7 @@ function fillCard(card, p) {
 
   card._sig = signature(p);
   card.classList.toggle('is-empty', p.status === 'empty');
+  card.classList.toggle('is-complete', !!p.completed);      // Complete §4
   clear(card);
 
   srcCardChip(card, p);                                 // Sources §5
@@ -617,6 +620,7 @@ function fillCard(card, p) {
   title.href = hrefProject(p.id);
   title.dataset.part = 'title';
   head.append(title);
+  if (p.completed) head.append(cmplBadge(p));            // Complete §4
   if (p.forge && p.forge.running) head.append(forgeBadge(p.forge));
   const when = h('span', 'card-when', p.lastActivityRelative || relTime(p.lastActivityISO));
   if (p.lastActivityISO) when.title = fmtDate(p.lastActivityISO);
@@ -975,10 +979,12 @@ function paintDetail(box, d) {
     t.append(icon('i-flask'), h('span', null, 'tests'));
     row.append(t);
   }
+  cmplPill(row, d);                                     // Complete §4
   head.append(row);
   head.append(wbOpenRow(d));                            // Workbench §5
   head.append(h('div', 'dpath mono', d.path || ''));
   const actions = h('div', 'dtrash');
+  actions.append(cmplAction(d));                        // Complete §4
   actions.append(trashAction(d));
   srcDetachAction(actions, d);                          // Sources §5
   head.append(actions);
@@ -5743,4 +5749,112 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', srcBootOnce, { once: true });
 } else {
   srcBootOnce();
+}
+
+/* ============================================================================
+ * COMPLETE: the project you finished on purpose (CONTRACT-COMPLETE.md §4)
+ *
+ * Everything else on a card is something Ground Control noticed. This is the
+ * one thing it was told. The dashboard is very good at showing that nothing
+ * has happened in a folder for eight months, and completely unable to say
+ * whether that is because the project is done or because it was dropped. A
+ * mark closes that gap, and the point of the styling is to make the difference
+ * legible at a glance across a grid of forty cards.
+ *
+ * Deliberately quiet:
+ *   §4: a finished project is not an urgent project. The card gets a green
+ *       edge and a small badge, and nothing else changes: no reordering, no
+ *       filter of its own, no colour anywhere near the weight of the ember the
+ *       rest of the UI reserves for things that want attention. Completion is
+ *       a resting state, and it should look like one.
+ *   §4: the badge carries the word "complete" as well as the colour, because a
+ *       green border alone says nothing to anyone who cannot see green.
+ *   §1: marking never touches the folder. The button says so.
+ * ========================================================================= */
+
+/** The small green badge that sits beside the name on a finished card. */
+function cmplBadge(p) {
+  const b = h('span', 'cmpl-badge');
+  b.append(icon('i-check'), h('span', 'cmpl-badge-t', 'complete'));
+  b.title = p.completedISO
+    ? 'Marked complete ' + relTime(p.completedISO)
+    : 'Marked complete';
+  b.setAttribute('aria-label', b.title);
+  return b;
+}
+
+/** The matching pill in the detail header's status row. */
+function cmplPill(row, d) {
+  if (!d.completed) return;
+  const pill = h('span', 'pill is-complete');
+  pill.append(icon('i-check'), h('span', null, 'Complete'));
+  if (d.completedISO) {
+    pill.title = 'Marked complete ' + relTime(d.completedISO) + ' (' + fmtDate(d.completedISO) + ')';
+  }
+  row.append(pill);
+}
+
+/**
+ * The toggle, in the detail view's action row beside Move to Trash.
+ *
+ * No confirmation either way: this writes one line to Ground Control's own
+ * config and nothing else, and the undo is the same button.
+ */
+function cmplAction(d) {
+  const done = !!d.completed;
+  const b = h('button', 'btn btn-sm cmpl-b' + (done ? ' is-on' : ''));
+  b.type = 'button';
+  b.append(icon(done ? 'i-check' : 'i-circle'),
+    h('span', null, done ? 'Marked complete' : 'Mark complete'));
+  b.title = done
+    ? 'Clear the mark on ' + (d.name || d.id) + '. The folder is not touched either way.'
+    : 'Record that ' + (d.name || d.id) + ' is finished. Nothing in the folder changes.';
+  b.setAttribute('aria-pressed', String(done));
+  b.addEventListener('click', () => cmplToggle(b, d, !done));
+  return b;
+}
+
+async function cmplToggle(button, d, want) {
+  button.disabled = true;
+  button.classList.add('is-busy');
+  try {
+    const data = await getJSON('/api/complete/' + encodeURIComponent(d.id), {
+      method: want ? 'POST' : 'DELETE',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: want ? JSON.stringify({ completed: true }) : undefined,
+    });
+
+    /* Update what is already on screen rather than waiting for the rescan the
+     * server has just kicked off: the click should feel finished when it is. */
+    cmplApply(d.id, data);
+    if (state.route.view === 'detail' && state.route.id === d.id) {
+      renderDetail(d.id, { silent: true });
+    }
+    renderGrid();
+
+    if (data.saveError) {
+      wbToast('Marked in this session only: ' + data.saveError, 'bad');
+    } else {
+      wbToast((d.name || d.id) + (want ? ' is marked complete.' : ' is no longer marked complete.'), 'ok');
+    }
+  } catch (err) {
+    button.disabled = false;
+    button.classList.remove('is-busy');
+    wbToast('Could not change that mark: ' + ((err && err.message) || err), 'bad');
+  }
+}
+
+/** Fold one server answer into every copy of that project the page is holding. */
+function cmplApply(id, data) {
+  const completed = !!(data && data.completed);
+  const completedISO = (data && data.completedISO) || null;
+
+  const p = state.byId.get(id);
+  if (p) { p.completed = completed; p.completedISO = completedISO; }
+
+  const detail = state.detailCache.get(id);
+  if (detail) { detail.completed = completed; detail.completedISO = completedISO; }
+
+  const card = state.cards.get(id);
+  if (card && p) fillCard(card, p);
 }

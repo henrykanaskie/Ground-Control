@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node server.js --open",
     "serve": "node server.js",
-    "check": "node --check server.js && node --check lib/scan.js && node --check lib/sources.js && node --check public/js/app.js && node --check public/js/markdown.js",
+    "check": "node --check server.js && node --check lib/scan.js && node --check lib/sources.js && node --check lib/marks.js && node --check public/js/app.js && node --check public/js/markdown.js",
     "test": "node --test test/*.test.js",
     "test:watch": "node --test --watch test/*.test.js"
   },

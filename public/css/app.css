@@ -10,6 +10,9 @@
   --text:#e8e5df; --text-2:#a2a8b3; --text-3:#6b7280;
   --ember:#f59e0b; --ember-2:#d97706; --ember-glow:rgba(245,158,11,.18);
   --active:#4ade80; --recent:#facc15; --idle:#fb923c; --dormant:#6b7280; --empty:#3f434b;
+  /* Complete §4: a resting green, dimmer than --active on purpose. A finished
+     project is settled, not busy, and must never out-shout a live one. */
+  --done:#5fae7f; --done-line:#2f5a43; --done-tint:rgba(95,174,127,.09);
   --wrap-read:1080px; --radius:12px;--radius-xs:5px; --radius-sm:8px;
   --mono:ui-monospace,"SF Mono",Menlo,monospace;
   --sans:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;
@@ -415,6 +418,39 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 .card.is-empty .card-title{color:var(--text-2);font-weight:500}
 .card.is-empty:hover{background:var(--panel);border-color:var(--line-2)}
 .card.is-empty .card-meta{color:#4a5059}
+
+/* ── complete: finished on purpose (CONTRACT-COMPLETE.md §4) ──────────── */
+/* A green edge and nothing else. No lifted background, no shadow, no motion:
+   the card should read as settled from across the grid and then get out of
+   the way. The inset ring rather than a thicker border keeps every card the
+   same size, so marking one does not nudge the whole layout. */
+.card.is-complete{border-color:var(--done-line);background:var(--panel)}
+.card.is-complete::before{box-shadow:inset 0 0 0 1px rgba(95,174,127,.22)}
+.card.is-complete:hover{border-color:var(--done);background:var(--panel-2)}
+.card.is-complete.is-empty{border-style:solid}
+
+.cmpl-badge{
+  position:relative;z-index:2;pointer-events:none;
+  display:inline-flex;align-items:center;gap:5px;flex:none;
+  margin-left:8px;padding:2px 8px 2px 6px;border-radius:99px;
+  background:var(--done-tint);border:1px solid rgba(95,174,127,.28);color:var(--done);
+}
+.cmpl-badge .icon{width:11px;height:11px;stroke-width:2}
+.cmpl-badge-t{
+  font-family:var(--mono);font-size:9px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;
+}
+
+/* the same statement, once, in the detail header */
+.pill.is-complete{color:var(--done);border-color:var(--done-line);background:var(--done-tint)}
+.pill.is-complete .icon{opacity:1;stroke-width:2}
+
+/* the toggle, in the detail action row beside Move to Trash */
+.cmpl-b{color:var(--text-3);border-color:var(--line);background:transparent}
+.cmpl-b:hover{border-color:var(--done-line);color:var(--done);background:var(--done-tint)}
+.cmpl-b.is-on{color:var(--done);border-color:var(--done-line);background:var(--done-tint)}
+.cmpl-b.is-on:hover{border-color:var(--done);background:rgba(95,174,127,.14)}
+.cmpl-b .icon{width:14px;height:14px}
 
 /* SSE pulse + enter/exit */
 @keyframes pulse{

@@ -26,6 +26,8 @@ import * as generate from './lib/generate.js';
 import * as locallib from './lib/local.js';
 // The source registry (CONTRACT-SOURCES.md): every folder Ground Control watches.
 import * as sourceslib from './lib/sources.js';
+// Completed marks (CONTRACT-COMPLETE.md): the one fact the user tells Ground Control.
+import * as markslib from './lib/marks.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -86,6 +88,31 @@ const SOURCES = new sourceslib.Registry({
 });
 
 if (SOURCES.loadError) console.error('[sources]', SOURCES.loadError);
+
+/* ------------------------------------------------------------------ *
+ * Completed marks (CONTRACT-COMPLETE.md)
+ *
+ * Every other field on a project is observed. This one is declared: a
+ * finished project and an abandoned one look identical from the outside, so
+ * the user says which is which and Ground Control remembers. The marks sit
+ * beside the source registry, so `--config` isolates them for the tests too.
+ * ------------------------------------------------------------------ */
+
+const MARKS = new markslib.Marks({ sourcesFile: SOURCES.file });
+
+if (MARKS.loadError) console.error('[marks]', MARKS.loadError);
+
+/**
+ * A mark changed. The scan cache holds `completed` on every project, so it has
+ * to be corrected rather than left to expire; patching it in place beats
+ * dropping it, because a full re-walk to flip one boolean is pure waste.
+ */
+function marksChanged() {
+  if (cache && cache.payload) MARKS.applyTo(cache.payload.projects);
+  for (const cb of [...sourceWatchers]) {
+    try { cb(); } catch { /* a dead client must not break the next one */ }
+  }
+}
 
 /**
  * The folder the header calls "the root". Kept as a live getter rather than a
@@ -162,6 +189,10 @@ async function getScan(fresh) {
     try {
       const payload = await scan.scanSources(SOURCES.all());
       payload.sources = SOURCES.describeAll();
+      // CONTRACT-COMPLETE.md: folded in here, at the one point every consumer
+      // passes through, so the grid, the detail view and the Reclaim sweep all
+      // see `completed` without any of them knowing where marks are stored.
+      MARKS.applyTo(payload.projects);
       if (generation === scanGeneration) cache = { payload, at: Date.now() };
       return payload;
     } catch (err) {
@@ -509,6 +540,12 @@ async function route(req, res) {
   if (pathname === '/api/sources' || pathname.startsWith('/api/sources/')
       || pathname === '/api/browse' || pathname === '/api/pick-folder') {
     return handleSources(req, res, pathname, query);
+  }
+
+  // Completed marks (CONTRACT-COMPLETE.md §3). Marking is a POST and unmarking
+  // a DELETE; the handler checks methods itself.
+  if (pathname === '/api/complete' || pathname.startsWith('/api/complete/')) {
+    return handleComplete(req, res, pathname);
   }
 
   if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -2016,4 +2053,109 @@ async function sourcesPick(res) {
     path: picked.path,
     inspect: sourceslib.inspect(picked.path),
   });
+}
+
+/* ============================================================================
+ * COMPLETE: the one fact the user tells Ground Control (CONTRACT-COMPLETE.md)
+ *
+ * Appended, in the manner of every other feature here. The changes elsewhere in
+ * this file are four lines: an import, the registry beside SOURCES, the fold in
+ * `getScan()`, and one dispatch block in `route()`.
+ *
+ * Non-negotiables:
+ *   §1: this is a declaration, not a measurement. Nothing here inspects the
+ *       folder, and nothing here ever changes it. The mark lives entirely in
+ *       Ground Control's own config directory; the project on disk is untouched.
+ *   §3: marking is loopback-only, for the same reason adding a folder is: it
+ *       writes to a file in the user's home directory.
+ * ========================================================================= */
+
+const COMPLETE_LOCAL_ONLY_MESSAGE =
+  'Projects can only be marked complete from the machine Ground Control is running on.';
+
+async function handleComplete(req, res, pathname) {
+  /* Reading the list back is harmless; changing it is loopback-only. */
+  const readOnlyList = pathname === '/api/complete' && (req.method === 'GET' || req.method === 'HEAD');
+  if (!readOnlyList && !isLocalRequest(req)) {
+    return sendError(res, 403, COMPLETE_LOCAL_ONLY_MESSAGE);
+  }
+
+  if (pathname === '/api/complete') {
+    if (req.method === 'GET' || req.method === 'HEAD') {
+      return sendJSON(res, 200, {
+        completed: MARKS.all(),
+        count: MARKS.count(),
+        file: MARKS.file,
+        saveError: MARKS.saveError || null,
+      });
+    }
+    return sendError(res, 405, 'method not allowed');
+  }
+
+  const rest = pathname.slice('/api/complete/'.length);
+  if (!rest || rest.indexOf('/') !== -1) return sendError(res, 404, 'unknown endpoint');
+
+  const id = safeDecode(rest);
+  if (id === null) return sendError(res, 400, 'bad request');
+  /* A project id is a slug. Anything that decodes into a path is refused
+   * before it reaches a lookup, exactly as in Reclaim and Sources. */
+  if (!sourceIdIsPlain(id)) return sendError(res, 404, 'unknown project');
+
+  if (req.method === 'GET' || req.method === 'HEAD') return completeRead(res, id);
+  if (req.method === 'POST' || req.method === 'PUT') return completeSet(req, res, id, true);
+  if (req.method === 'DELETE') return completeSet(req, res, id, false);
+  return sendError(res, 405, 'method not allowed');
+}
+
+async function completeRead(res, id) {
+  const project = await findProject(id);
+  if (!project) return sendError(res, 404, 'unknown project');
+  return sendJSON(res, 200, completePayload(project));
+}
+
+/**
+ * Set or clear the mark.
+ *
+ * A POST body of `{ "completed": false }` is honoured, so a client that would
+ * rather send one method can. The path written is the project's own, taken
+ * from the scan: the request names a project, never a path, so there is no
+ * user-supplied path to guard here at all.
+ */
+async function completeSet(req, res, id, fallback) {
+  let want = fallback;
+  if (req.method === 'POST' || req.method === 'PUT') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (err) { return sendError(res, err.status || 400, err.message || 'bad request'); }
+    if (Object.prototype.hasOwnProperty.call(body, 'completed')) want = Boolean(body.completed);
+  }
+
+  const project = await findProject(id);
+  if (!project) return sendError(res, 404, 'unknown project');
+
+  const result = MARKS.set(project.path, want);
+  if (!result) return sendError(res, 400, 'that project has no path to mark');
+  if (MARKS.saveError) {
+    // The in-memory mark still applied, so say what happened rather than
+    // pretending it worked or pretending it did not.
+    console.error('[marks]', MARKS.saveError);
+  }
+
+  project.completed = result.completed;
+  project.completedISO = result.completedISO;
+  marksChanged();
+
+  return sendJSON(res, 200, Object.assign(completePayload(project), {
+    saveError: MARKS.saveError || null,
+  }));
+}
+
+function completePayload(project) {
+  return {
+    id: project.id,
+    name: project.name,
+    path: project.path,
+    completed: Boolean(project.completed),
+    completedISO: project.completedISO || null,
+  };
 }
