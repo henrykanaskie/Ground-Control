@@ -620,7 +620,7 @@ function fillCard(card, p) {
   title.href = hrefProject(p.id);
   title.dataset.part = 'title';
   head.append(title);
-  if (p.completed) head.append(cmplBadge(p));            // Complete §4
+  head.append(cmplCardToggle(p));                       // Complete §4
   if (p.forge && p.forge.running) head.append(forgeBadge(p.forge));
   const when = h('span', 'card-when', p.lastActivityRelative || relTime(p.lastActivityISO));
   if (p.lastActivityISO) when.title = fmtDate(p.lastActivityISO);
@@ -5808,14 +5808,46 @@ if (document.readyState === 'loading') {
  *   §1: marking never touches the folder. The button says so.
  * ========================================================================= */
 
-/** The small green badge that sits beside the name on a finished card. */
-function cmplBadge(p) {
-  const b = h('span', 'cmpl-badge');
-  b.append(icon('i-check'), h('span', 'cmpl-badge-t', 'complete'));
-  b.title = p.completedISO
-    ? 'Marked complete ' + relTime(p.completedISO)
-    : 'Marked complete';
-  b.setAttribute('aria-label', b.title);
+/**
+ * The card's toggle, and the whole of the grid's affordance.
+ *
+ * Two states, deliberately asymmetric:
+ *
+ *   marked    the green COMPLETE badge, always visible, and clicking it
+ *             clears the mark. The badge already looked like the thing you
+ *             would press; making it the button costs no extra furniture.
+ *   unmarked  an empty circle that fades in on hover or focus, beside Open.
+ *             Marking is rare and a card must stay calm, so nothing shows
+ *             until you engage with that card.
+ *
+ * Both sit above the card's stretched title link (z-index, like .wb-open), so
+ * pressing one marks the project instead of opening it.
+ */
+function cmplCardToggle(p) {
+  const done = !!p.completed;
+  const b = h('button', 'cmpl-mark' + (done ? ' is-on' : ''));
+  b.type = 'button';
+  b.dataset.part = 'complete';
+  b.setAttribute('aria-pressed', String(done));
+
+  /* Both states carry the word, and the same pill shape, so the control is
+   * self-explanatory the first time it appears and nothing shifts when it
+   * flips. An icon alone read as decoration. */
+  b.append(icon(done ? 'i-check' : 'i-circle'), h('span', 'cmpl-mark-t', 'complete'));
+  b.title = done
+    ? (p.completedISO ? 'Marked complete ' + relTime(p.completedISO) : 'Marked complete')
+      + '. Click to clear the mark.'
+    : 'Mark ' + (p.name || p.id) + ' complete. Nothing in the folder changes.';
+  b.setAttribute('aria-label', done
+    ? 'Clear the complete mark on ' + (p.name || p.id)
+    : 'Mark ' + (p.name || p.id) + ' complete');
+
+  b.addEventListener('click', (ev) => {
+    // The whole card is a link. This is not part of it.
+    ev.preventDefault();
+    ev.stopPropagation();
+    cmplToggle(b, p, !done);
+  });
   return b;
 }
 

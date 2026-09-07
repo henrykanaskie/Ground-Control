@@ -429,17 +429,38 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 .card.is-complete:hover{border-color:var(--done);background:var(--panel-2)}
 .card.is-complete.is-empty{border-style:solid}
 
-.cmpl-badge{
-  position:relative;z-index:2;pointer-events:none;
-  display:inline-flex;align-items:center;gap:5px;flex:none;
-  margin-left:8px;padding:2px 8px 2px 6px;border-radius:99px;
-  background:var(--done-tint);border:1px solid rgba(95,174,127,.28);color:var(--done);
+/* The card's toggle. Unmarked it is an empty circle that stays out of the way
+   until the card is engaged, exactly as .wb-open does; marked it is the badge
+   itself, always visible, because a finished card should say so from across
+   the grid. Above the stretched title link so pressing it marks rather than
+   navigates. */
+.cmpl-mark{
+  position:relative;z-index:3;flex:none;
+  display:inline-flex;align-items:center;gap:5px;
+  margin-left:8px;height:20px;padding:0 8px 0 6px;border-radius:99px;
+  border:1px solid var(--line);background:var(--panel-2);color:var(--text-3);
+  cursor:pointer;transition:opacity var(--t-fast),color var(--t-fast),
+    border-color var(--t-fast),background var(--t-fast);
 }
-.cmpl-badge .icon{width:11px;height:11px;stroke-width:2}
-.cmpl-badge-t{
+.cmpl-mark .icon{width:11px;height:11px;stroke-width:2}
+.cmpl-mark-t{
   font-family:var(--mono);font-size:9px;font-weight:600;
   letter-spacing:.1em;text-transform:uppercase;
 }
+.cmpl-mark:hover{border-color:var(--done-line);color:var(--done);background:var(--done-tint)}
+
+/* marked: the badge, and it never hides */
+.cmpl-mark.is-on{
+  background:var(--done-tint);border-color:rgba(95,174,127,.28);color:var(--done);
+}
+.cmpl-mark.is-on:hover{border-color:var(--done);background:rgba(95,174,127,.16)}
+
+/* unmarked: reveal on engagement only */
+.card .cmpl-mark:not(.is-on){opacity:0}
+.card:hover .cmpl-mark,
+.card:focus-within .cmpl-mark,
+.card .cmpl-mark:focus-visible{opacity:1}
+@media (hover:none){.card .cmpl-mark{opacity:1}}
 
 /* the same statement, once, in the detail header */
 .pill.is-complete{color:var(--done);border-color:var(--done-line);background:var(--done-tint)}
