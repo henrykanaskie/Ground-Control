@@ -7,12 +7,32 @@
 :root{
   --bg:#0a0b0d; --bg-2:#101216; --panel:#15181d; --panel-2:#1b1f26;
   --line:#252a32; --line-2:#333a45;
-  --text:#e8e5df; --text-2:#a2a8b3; --text-3:#6b7280;
-  --ember:#f59e0b; --ember-2:#d97706; --ember-glow:rgba(245,158,11,.18);
-  --active:#4ade80; --recent:#facc15; --idle:#fb923c; --dormant:#6b7280; --empty:#3f434b;
-  /* Complete §4: a resting green, dimmer than --active on purpose. A finished
-     project is settled, not busy, and must never out-shout a live one. */
-  --done:#5fae7f; --done-line:#2f5a43; --done-tint:rgba(95,174,127,.09);
+  /* --text-3 is the most-used colour here. At #6b7280 it sat at 3.68:1 on
+     --panel: under the 4.5:1 AA floor, on real running text (timestamps, metric
+     labels, "no documents"). Raised to 4.91:1. */
+  --text:#e8e5df; --text-2:#a2a8b3; --text-3:#7f8794;
+  /* One accent, and it means "you can act on this": brand, buttons, links,
+     focus. Nothing that is merely a status is allowed to borrow it. */
+  --ember:#f2a33a; --ember-2:#d9861c; --ember-glow:rgba(242,163,58,.18);
+  /* --ember-dim carries "uncommitted": warm, because it wants a decision, but
+     never as bright as something you can click. */
+  --ember-dim:#c98f3d;
+
+  /* Recency is a magnitude, not a set of categories, so the ramp fades instead
+     of changing hue: saturated green for something alive, then desaturating and
+     darkening to slate as the last activity recedes. Luminance falls at every
+     step (.55 > .33 > .19 > .14), so the order survives greyscale and the ramp
+     never has to compete for hue with the accent or with --done. */
+  --active:#4ade80; --recent:#6aa886; --idle:#6b7a8c; --dormant:#5f6875; --empty:#363c48;
+
+  /* Complete §4: blue, not green. Green was 2 degrees of hue from --active,
+     so "someone is working here right now" and "this was finished months ago"
+     rendered as the same colour on the same card. Blue reads as settled and
+     collides with nothing else that is on screen for more than a moment. */
+  --done:#5eb3e0; --done-line:#2b5063; --done-tint:rgba(94,179,224,.10);
+
+  /* Destructive. Was ten raw hex literals scattered through this file. */
+  --danger:#e8827f; --danger-line:#5a2a2a; --danger-tint:rgba(232,130,127,.09);
   --wrap-read:1080px; --radius:12px;--radius-xs:5px; --radius-sm:8px;
   --mono:ui-monospace,"SF Mono",Menlo,monospace;
   --sans:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;
@@ -130,8 +150,8 @@ svg{display:block}
 .live-dot{width:7px;height:7px;border-radius:50%;background:var(--text-3);transition:background var(--t),box-shadow var(--t)}
 .live[data-state="open"] .live-dot{background:var(--active);box-shadow:0 0 0 3px rgba(74,222,128,.13)}
 .live[data-state="open"] .live-label{color:var(--text-2)}
-.live[data-state="connecting"] .live-dot{background:var(--recent);animation:blink 1.4s var(--ease) infinite}
-.live[data-state="down"] .live-dot{background:var(--empty)}
+.live[data-state="connecting"] .live-dot{background:var(--ember);animation:blink 1.4s var(--ease) infinite}
+.live[data-state="down"] .live-dot{background:var(--danger)}
 .live.beat .live-dot{box-shadow:0 0 0 5px var(--ember-glow);background:var(--ember)}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.28}}
 
@@ -389,7 +409,7 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 }
 .card-meta .m{display:inline-flex;align-items:center;gap:6px}
 .card-meta .m .icon{width:12.5px;height:12.5px;stroke-width:1.6;opacity:.75}
-.card-meta .m.is-dirty{color:var(--idle)}
+.card-meta .m.is-dirty{color:var(--ember-dim)}
 .card-meta .m.is-todo{color:var(--text-2)}
 
 .card-doc{
@@ -425,7 +445,7 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
    the way. The inset ring rather than a thicker border keeps every card the
    same size, so marking one does not nudge the whole layout. */
 .card.is-complete{border-color:var(--done-line);background:var(--panel)}
-.card.is-complete::before{box-shadow:inset 0 0 0 1px rgba(95,174,127,.22)}
+.card.is-complete::before{box-shadow:inset 0 0 0 1px rgba(94,179,224,.24)}
 .card.is-complete:hover{border-color:var(--done);background:var(--panel-2)}
 .card.is-complete.is-empty{border-style:solid}
 
@@ -451,9 +471,9 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 
 /* marked: the badge, and it never hides */
 .cmpl-mark.is-on{
-  background:var(--done-tint);border-color:rgba(95,174,127,.28);color:var(--done);
+  background:var(--done-tint);border-color:rgba(94,179,224,.30);color:var(--done);
 }
-.cmpl-mark.is-on:hover{border-color:var(--done);background:rgba(95,174,127,.16)}
+.cmpl-mark.is-on:hover{border-color:var(--done);background:rgba(94,179,224,.18)}
 
 /* unmarked: reveal on engagement only */
 .card .cmpl-mark:not(.is-on){opacity:0}
@@ -470,7 +490,7 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 .cmpl-b{color:var(--text-3);border-color:var(--line);background:transparent}
 .cmpl-b:hover{border-color:var(--done-line);color:var(--done);background:var(--done-tint)}
 .cmpl-b.is-on{color:var(--done);border-color:var(--done-line);background:var(--done-tint)}
-.cmpl-b.is-on:hover{border-color:var(--done);background:rgba(95,174,127,.14)}
+.cmpl-b.is-on:hover{border-color:var(--done);background:rgba(94,179,224,.16)}
 .cmpl-b .icon{width:14px;height:14px}
 
 /* SSE pulse + enter/exit */
@@ -536,7 +556,7 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 }
 .pill .icon{width:13px;height:13px;opacity:.8}
 .pill.is-git{font-family:var(--mono);font-size:11.5px}
-.pill.is-dirty{color:var(--idle);border-color:#43331f}
+.pill.is-dirty{color:var(--ember-dim);border-color:#43331f}
 .dhead .dpath{font-size:11.5px;color:var(--text-3);overflow-wrap:anywhere}
 .dhead .dblurb{font-size:14.5px;line-height:1.62;color:var(--text-2);max-width:76ch;margin-top:16px}
 
@@ -622,7 +642,7 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 
 /* dirty files */
 .dirty{display:flex;gap:10px;padding:8px 16px;align-items:center;font-family:var(--mono);font-size:11.5px}
-.dirty .st{width:20px;flex:none;color:var(--idle);font-weight:600}
+.dirty .st{width:20px;flex:none;color:var(--ember-dim);font-weight:600}
 .dirty .st[data-s="A"]{color:var(--active)}
 .dirty .st[data-s="D"]{color:#f87171}
 .dirty .st[data-s="?"]{color:var(--text-3)}
