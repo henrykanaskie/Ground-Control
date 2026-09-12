@@ -31,12 +31,12 @@ enum Palette {
                 blue:    CGFloat(v & 0xff) / 255,
                 alpha: 1)
     }
-    static let obsidian = hex(0x0a0b0d)   // --bg
-    static let panel    = hex(0x15181d)   // --panel
-    static let line     = hex(0x252a32)   // --line
-    static let text     = hex(0xe8e5df)   // --text
-    static let text2    = hex(0xa2a8b3)   // --text-2
-    static let ember     = hex(0xf59e0b)  // --ember
+    static let obsidian = hex(0x080d12)   // --bg
+    static let panel    = hex(0x111a22)   // --panel
+    static let line     = hex(0x1e2b36)   // --line
+    static let text     = hex(0xe3eef5)   // --text
+    static let text2    = hex(0x97aab8)   // --text-2
+    static let accent    = hex(0x38bdf8)  // --accent
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -537,7 +537,7 @@ final class CurtainView: NSView {
         button.target = self
         button.action = #selector(buttonTapped)
         button.isHidden = true
-        button.contentTintColor = Palette.ember
+        button.contentTintColor = Palette.accent
 
         let stack = NSStackView(views: [iris, titleLabel, detailLabel, logLabel, button])
         stack.orientation = .vertical
@@ -582,7 +582,7 @@ final class CurtainView: NSView {
     }
 }
 
-/// A small ember eye, drawn so the waiting screen is recognisably Ground Control.
+/// A small accent eye, drawn so the waiting screen is recognisably Ground Control.
 /// A container that accepts folders dragged in from Finder.
 ///
 /// This is the one place in Ground Control where a drop is unambiguous: AppKit hands
