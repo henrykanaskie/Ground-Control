@@ -10,7 +10,15 @@ let srv, root;
 
 test.before(async () => {
   root = fixtureRoot('http');
-  project(root, 'alpha', { files: { 'ONBOARDING.md': '# Taking over alpha\n\nEverything you need.\n', 'src/main.py': 'print(1)\n' } });
+  project(root, 'alpha', {
+    files: {
+      'ONBOARDING.md': '# Taking over alpha\n\nEverything you need.\n',
+      'src/main.py': 'print(1)\n',
+      // A one-pixel PNG and a big one: the reader has to survive both.
+      'logo.png': Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex'),
+      'huge.bin': Buffer.alloc(3 * 1024 * 1024),
+    },
+  });
   project(root, 'beta', { files: { 'README.md': '# beta\n\nA second project.\n' }, state: 'clean' });
   const empty = project(root, 'hollow', { files: {} });
   age(empty, 300);
@@ -56,6 +64,34 @@ test('a document can be read back', async () => {
   const id = d.projects.find((p) => p.name === 'alpha').id;
   const doc = await srv.json(`/api/doc?id=${id}&path=ONBOARDING.md`);
   assert.match(doc.content, /Taking over alpha/);
+});
+
+test('a binary file is described rather than decoded', async () => {
+  const d = await srv.json('/api/projects');
+  const id = d.projects.find((p) => p.name === 'alpha').id;
+  const doc = await srv.json(`/api/doc?id=${id}&path=logo.png`);
+  assert.equal(doc.binary, true);
+  assert.equal(doc.contentType, 'binary');
+  assert.equal(doc.mediaType, 'image/png');
+  assert.equal(doc.content, '');
+  assert.ok(doc.sizeBytes > 0);
+});
+
+test('the text size cap does not reach files that are never read as text', async () => {
+  const d = await srv.json('/api/projects');
+  const id = d.projects.find((p) => p.name === 'alpha').id;
+  const r = await srv.get(`/api/doc?id=${id}&path=huge.bin`);
+  assert.equal(r.status, 200, '3 MB of bytes is a preview, not a 413');
+  assert.equal(JSON.parse(r.body).binary, true);
+});
+
+test('a text document still carries its content and media type', async () => {
+  const d = await srv.json('/api/projects');
+  const id = d.projects.find((p) => p.name === 'alpha').id;
+  const doc = await srv.json(`/api/doc?id=${id}&path=src/main.py`);
+  assert.equal(doc.binary, false);
+  assert.equal(doc.content, 'print(1)\n');
+  assert.match(doc.mediaType, /^text\/plain/);
 });
 
 test('path traversal is refused on every file-reading route', async () => {

@@ -107,6 +107,21 @@ dirty. The reader renders markdown properly: headings, tables, nested lists,
 syntax-highlighted code: with a table of contents. Projects whose explainer is
 a rendered HTML page open that page in a sandboxed frame.
 
+## Reading the files themselves
+
+The file tree is not a listing, it is a way in. Click any file and it opens in
+the reader; click a folder and it folds away. Source files arrive
+syntax-highlighted with line numbers, images and PDFs are shown rather than
+described, and audio and video get a player that downloads nothing until you
+press play.
+
+A file that genuinely has nothing to show says so. Binary is detected rather
+than assumed, by extension and then by looking at the first few kilobytes, so a
+compiled binary or a database file gets one honest sentence and a link to the
+raw bytes instead of a screenful of noise. Text stops at 2 MB, which is the
+point where holding a file in the browser stops being kind; the limit is on
+text, so a large image or video still previews fine.
+
 ## Finding the onboarding doc
 
 Discovery searches the project root and any one subdirectory (skipping

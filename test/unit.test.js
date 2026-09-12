@@ -79,6 +79,20 @@ test('markdown rejects javascript: and data: urls', () => {
   assert.ok(!/href="data:text\/html/i.test(out));
 });
 
+test('highlighting a whole file escapes it, the same as a fenced block', () => {
+  const out = md.highlightCode('const x = "<script>alert(1)</script>";', 'js');
+  assert.ok(!/<script/i.test(out), 'must not emit a script tag');
+  assert.match(out, /&lt;script/i);
+});
+
+test('a file finds its highlighter by extension, or honestly finds none', () => {
+  assert.equal(md.langForPath('src/app.js'), 'js');
+  assert.equal(md.langForPath('deep/path/Server.swift'), 'swift');
+  assert.equal(md.langForPath('Makefile'), 'makefile');
+  assert.equal(md.langForPath('notes.unknownext'), '');
+  assert.equal(md.langForPath(''), '');
+});
+
 test('markdown heading ids match the ids headings() reports', () => {
   const src = '# One\n\n## Two Words\n\n## Two Words\n';
   const html = md.render(src);

@@ -1258,6 +1258,18 @@ function langPanel(d) {
 
 /* ── file tree ────────────────────────────────────────────────────────── */
 
+/**
+ * Every row is a control, not a label: a file opens in the reader, a directory
+ * folds its subtree away. Rendering them as <a> and <button> rather than styled
+ * <div>s is what gives them the keyboard, the focus ring and the status-bar URL
+ * for free.
+ *
+ * The tree arrives flat, each entry carrying its depth, so "fold this
+ * directory" is "hide every later row whose path sits under it". Visibility is
+ * recomputed from the set of collapsed paths rather than toggled row by row,
+ * which is what makes nested folds compose: re-opening an outer directory
+ * cannot reveal the inner one the reader had already closed.
+ */
 function treePanel(d) {
   const tree = Array.isArray(d.tree) ? d.tree : [];
   const p = panel('Files', 'i-folder', tree.length ? String(tree.length) : null);
@@ -1267,16 +1279,45 @@ function treePanel(d) {
     return p;
   }
   const box = h('div', 'tree');
+  const rows = [];
+  const collapsed = new Set();
+
+  const applyFolds = () => {
+    for (const r of rows) {
+      let hidden = false;
+      for (const dir of collapsed) {
+        if (r.path.startsWith(dir + '/')) { hidden = true; break; }
+      }
+      r.el.hidden = hidden;
+    }
+  };
+
   for (const node of tree) {
     const isDir = node.type === 'dir' || node.type === 'directory';
-    const rowEl = h('div', 'tree-row' + (isDir ? ' is-dir' : ''));
+    const rel = String(node.path || '');
+    const rowEl = h(isDir ? 'button' : 'a', 'tree-row ' + (isDir ? 'is-dir' : 'is-file'));
+    if (isDir) {
+      rowEl.type = 'button';
+      rowEl.setAttribute('aria-expanded', 'true');
+    } else {
+      rowEl.href = hrefDoc(d.id, rel);
+    }
     rowEl.style.paddingLeft = (16 + (node.depth || 0) * 14) + 'px';
     rowEl.append(icon(isDir ? 'i-folder' : 'i-file'));
-    const base = String(node.path || '').split('/').pop();
-    const nameEl = h('span', 'tn', base + (isDir ? '/' : ''));
-    rowEl.append(nameEl);
+    rowEl.append(h('span', 'tn', rel.split('/').pop() + (isDir ? '/' : '')));
     if (!isDir && typeof node.sizeBytes === 'number') rowEl.append(h('span', 'tz', fmtBytes(node.sizeBytes)));
-    rowEl.title = node.path || '';
+    if (isDir) {
+      rowEl.append(icon('i-chevron', 'tc'));
+      rowEl.addEventListener('click', () => {
+        if (collapsed.has(rel)) collapsed.delete(rel); else collapsed.add(rel);
+        const folded = collapsed.has(rel);
+        rowEl.classList.toggle('is-collapsed', folded);
+        rowEl.setAttribute('aria-expanded', folded ? 'false' : 'true');
+        applyFolds();
+      });
+    }
+    rowEl.title = rel;
+    rows.push({ el: rowEl, path: rel });
     box.append(rowEl);
   }
   p.append(box);
@@ -1324,11 +1365,17 @@ async function renderReader(id, path) {
       if (token !== state.readerToken) return;
       clear(box);
       box.append(crumbs({ id, name: id }, path.split('/').pop()));
-      const b = h('div', 'blank');
-      b.append(icon('i-alert', 'blank-icon'));
-      b.append(h('h2', null, err.status === 404 ? 'Document not found' : 'Could not open this document'));
-      b.append(h('p', null, path + ' - ' + err.message));
-      const back = h('a', 'btn', 'Back to project');
+      const tooBig = err.status === 413;
+      const b = blankState(
+        tooBig ? 'i-box' : 'i-alert',
+        tooBig ? 'This file is too large to preview'
+          : (err.status === 404 ? 'File not found' : 'Could not open this file'),
+        tooBig
+          ? path + ' is over the 2 MB the reader will hold in memory. The raw file opens in full.'
+          : path + ' - ' + err.message,
+        tooBig ? id : null,
+        tooBig ? path : null);
+      const back = h('a', tooBig ? 'btn btn-ghost' : 'btn', 'Back to project');
       back.href = hrefProject(id);
       b.append(back);
       box.append(b);
@@ -1355,7 +1402,7 @@ async function paintReader(box, id, path, doc, token) {
   const head = h('header', 'rhead');
   head.append(h('h1', null, doc.title || path.split('/').pop()));
   const meta = h('div', 'rhead-meta');
-  meta.append(h('span', 'kind', kindOf(doc.kind).label));
+  meta.append(h('span', 'kind', readerLabel(doc, path)));
   meta.append(h('span', null, path));
   if (doc.sizeBytes) meta.append(h('span', null, fmtBytes(doc.sizeBytes)));
   if (doc.mtimeISO) {
@@ -1376,8 +1423,24 @@ async function paintReader(box, id, path, doc, token) {
   const content = typeof doc.content === 'string' ? doc.content : '';
   const kind = doc.kind;
   const ctype = doc.contentType;
+  const media = String(doc.mediaType || '');
+  /* The table of contents is a prose feature. Everything else gets the full
+     width, and says so in one place rather than in five. */
+  const wide = () => { aside.remove(); layout.style.gridTemplateColumns = 'minmax(0,1fr)'; };
 
-  if (kind === 'html' || ctype === 'html') {
+  if (media.startsWith('image/')) {
+    col.append(imageView(id, path, doc));
+    wide();
+  } else if (media.startsWith('video/') || media.startsWith('audio/')) {
+    col.append(playerView(id, path, media));
+    wide();
+  } else if (media === 'application/pdf') {
+    col.append(pdfView(id, path));
+    wide();
+  } else if (doc.binary) {
+    col.append(binaryView(id, path, doc));
+    wide();
+  } else if (kind === 'html' || ctype === 'html') {
     const note = h('div', 'artifact-note');
     note.append(icon('i-window'));
     const noteText = h('span', null, 'This is a project artifact, rendered in a sandboxed frame exactly as it sits on disk. Scripts are blocked here: ');
@@ -1445,7 +1508,8 @@ async function paintReader(box, id, path, doc, token) {
     if (md && typeof md.render === 'function') {
       const base = { rawBase: '/api/raw?id=' + encodeURIComponent(id) + '&path=', docBase: '/api/doc?id=' + encodeURIComponent(id) + '&path=', basePath: dirnameOf(path) };
       try {
-        // The ONE place innerHTML is used: markdown.js guarantees escaped-safe HTML.
+        // One of the two places innerHTML is used (the other is codeView()):
+        // markdown.js guarantees escaped-safe HTML.
         docEl.innerHTML = md.render(content, base);
       } catch (err) {
         docEl.append(plainFallback(content, 'The markdown renderer failed (' + err.message + '): showing the raw file.'));
@@ -1461,9 +1525,9 @@ async function paintReader(box, id, path, doc, token) {
       layout.style.gridTemplateColumns = 'minmax(0,1fr)';
     }
   } else {
-    col.append(h('pre', 'rawtext', content));
-    aside.remove();
-    layout.style.gridTemplateColumns = 'minmax(0,1fr)';
+    col.append(await codeView(content, path, token));
+    if (token !== state.readerToken) return;
+    wide();
   }
 
   layout.append(col);
@@ -1492,6 +1556,158 @@ function notebookView(content) {
   try { text = JSON.stringify(JSON.parse(content), null, 2); } catch { /* leave raw */ }
   frag.append(h('pre', 'rawtext', text));
   return frag;
+}
+
+/* ── previews for files that are not prose ────────────────────────────── *
+ * Every project is mostly not documents, so the reader has to be able to open
+ * an icon, a screenshot, a lockfile or a source file and show something true
+ * about it. Four shapes cover it: pixels, a player, a page, and an honest
+ * refusal. All four load the bytes from /api/raw rather than from the JSON,
+ * which is why a 40 MB video costs this page nothing until it is played.
+ * ---------------------------------------------------------------------- */
+
+/** The chip in the reader header: what kind of file this is, in one word. */
+function readerLabel(doc, path) {
+  const media = String(doc.mediaType || '');
+  if (media.startsWith('image/')) return 'Image';
+  if (media.startsWith('video/')) return 'Video';
+  if (media.startsWith('audio/')) return 'Audio';
+  if (media === 'application/pdf') return 'PDF';
+  if (doc.binary) return 'Binary';
+  if (doc.kind === 'notebook' || doc.contentType === 'markdown' || doc.contentType === 'html') {
+    return kindOf(doc.kind).label;
+  }
+  // Named by its own extension rather than by a table this file would have to
+  // keep in step with the highlighter: SWIFT, CSS, YML say more than "Text".
+  const base = path.split('/').pop();
+  const dot = base.lastIndexOf('.');
+  return dot > 0 ? base.slice(dot + 1).toUpperCase().slice(0, 12) : 'Text';
+}
+
+function imageView(id, path, doc) {
+  const frag = document.createDocumentFragment();
+  const wrap = h('div', 'media-view');
+  const img = h('img', null);
+  img.src = rawUrl(id, path);
+  img.alt = path.split('/').pop();
+  wrap.append(img);
+  const cap = h('div', 'media-cap', doc.sizeBytes ? fmtBytes(doc.sizeBytes) : '');
+  img.addEventListener('load', () => {
+    if (!img.naturalWidth) return;
+    const dims = img.naturalWidth + ' × ' + img.naturalHeight + ' px';
+    cap.textContent = doc.sizeBytes ? dims + ' · ' + fmtBytes(doc.sizeBytes) : dims;
+  });
+  img.addEventListener('error', () => {
+    wrap.replaceChildren(blankState('i-alert', 'This image could not be displayed',
+      'The file is there, but the browser refused to decode it. Opening the raw file may say why.',
+      id, path));
+    cap.remove();
+  });
+  frag.append(wrap, cap);
+  return frag;
+}
+
+function playerView(id, path, media) {
+  const wrap = h('div', 'media-view');
+  const isVideo = media.startsWith('video/');
+  const player = h(isVideo ? 'video' : 'audio', null);
+  player.controls = true;
+  player.preload = 'metadata';
+  player.src = rawUrl(id, path);
+  if (!isVideo) player.style.width = '100%';
+  wrap.append(player);
+  return wrap;
+}
+
+function pdfView(id, path) {
+  const frag = document.createDocumentFragment();
+  const note = h('div', 'artifact-note');
+  note.append(icon('i-doc'));
+  const noteText = h('span', null, 'A PDF, shown in the browser\u2019s own viewer. ');
+  const open = h('a', null, 'Open it in a new tab');
+  open.href = rawUrl(id, path);
+  open.target = '_blank';
+  open.rel = 'noreferrer';
+  noteText.append(open, document.createTextNode(' for a full-window view.'));
+  note.append(noteText);
+  frag.append(note);
+  // Unlike the HTML-artifact frame, this one is not sandboxed, and does not
+  // need to be: /api/raw sends application/pdf with nosniff, so this frame can
+  // only ever be a PDF in the browser's viewer, never a page from the
+  // repository running script on this origin. Sandboxing it would instead
+  // leave a blank box, because some PDF viewers are themselves scripted.
+  const frame = h('iframe', 'raw-frame');
+  frame.setAttribute('title', path.split('/').pop() + ' (PDF)');
+  frame.src = rawUrl(id, path);
+  frag.append(frame);
+  return frag;
+}
+
+function binaryView(id, path, doc) {
+  const media = String(doc.mediaType || '');
+  const size = doc.sizeBytes ? fmtBytes(doc.sizeBytes) : '';
+  const tail = media && media !== 'application/octet-stream'
+    ? ' This one is ' + media + (size ? ', ' + size : '') + '.'
+    : ' This one is ' + (size ? size + ' ' : '') + 'of a kind Ground Control does not recognise.';
+  return blankState('i-box', 'No preview for this file',
+    'These are bytes, not text: reading them as characters would show noise rather than content.' + tail,
+    id, path);
+}
+
+function blankState(iconName, title, body, id, path) {
+  const b = h('div', 'blank');
+  b.append(icon(iconName, 'blank-icon'));
+  b.append(h('h2', null, title));
+  b.append(h('p', null, body));
+  if (id && path) {
+    const open = h('a', 'btn', 'Open the raw file');
+    open.href = rawUrl(id, path);
+    open.target = '_blank';
+    open.rel = 'noreferrer';
+    b.append(open);
+  }
+  return b;
+}
+
+/* Source files get the same highlighter the markdown reader uses on fenced
+ * blocks, plus a line-number gutter. The gutter is a sibling column rather
+ * than markup inside the code, because the highlighter emits spans that run
+ * across line breaks (a block comment, a template string): splitting its
+ * output by line would tear those in half. Keeping the numbers outside costs
+ * one rule, `white-space: pre` on the code, so that one source line is always
+ * one rendered line and the two columns stay in step. */
+const HIGHLIGHT_MAX_BYTES = 300 * 1024;
+
+async function codeView(content, path, token) {
+  const box = h('div', 'codeview');
+  const lines = content.split('\n');
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+  const gut = h('div', 'gut');
+  for (let i = 1; i <= lines.length; i++) gut.append(h('span', null, String(i)));
+
+  const pre = h('pre', 'cv-code');
+  const code = h('code', null);
+  code.textContent = content;
+  pre.append(code);
+  box.append(gut, pre);
+
+  // A minified bundle is one 800 KB line: the highlighter would walk every
+  // character of it for a result nobody can read. Past the cap it stays plain.
+  if (content.length > HIGHLIGHT_MAX_BYTES) return box;
+
+  let md = null;
+  try { md = await loadMarkdown(); } catch { md = null; }
+  if (token !== state.readerToken) return box;
+  if (!md || typeof md.langForPath !== 'function') return box;
+  const lang = md.langForPath(path);
+  if (!lang) return box;
+  try {
+    // The second of the two places innerHTML is used (the other is the
+    // markdown reader): markdown.js escapes every character it does not wrap
+    // in a token span, so this is the renderer's own escaped-safe output.
+    code.innerHTML = md.highlightCode(content, lang);
+  } catch { /* the plain text set above stands */ }
+  return box;
 }
 
 /* in-app navigation for markdown links to other .md files */
@@ -5800,7 +6016,7 @@ if (document.readyState === 'loading') {
  * Deliberately quiet:
  *   §4: a finished project is not an urgent project. The card gets a green
  *       edge and a small badge, and nothing else changes: no reordering, no
- *       filter of its own, no colour anywhere near the weight of the ember the
+ *       filter of its own, no colour anywhere near the weight of the accent the
  *       rest of the UI reserves for things that want attention. Completion is
  *       a resting state, and it should look like one.
  *   §4: the badge carries the word "complete" as well as the colour, because a

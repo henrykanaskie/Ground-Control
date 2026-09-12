@@ -317,13 +317,39 @@ async function handleDoc(res, query) {
   let st;
   try { st = await fsp.stat(abs); } catch { return sendError(res, 404, 'not found'); }
   if (!st.isFile()) return sendError(res, 404, 'not found');
+
+  const relPosix = path.relative(project.path, abs).split(path.sep).join('/');
+  const mediaType = mimeFor(abs);
+
+  /* A binary file is described, not decoded. Reading a PNG as UTF-8 gives a
+   * screenful of replacement characters, not a preview, so the reader is told
+   * what the file is and points an <img>, <video> or frame at /api/raw for the
+   * bytes. The size cap below deliberately does not apply here: nothing is
+   * read, so a 40 MB screenshot previews fine. It is 40 MB of *text* that
+   * would not. Extension first (cheap, and right for a file too short to
+   * sniff), then a NUL byte in the first 4 KB, which is what actually makes
+   * bytes undisplayable as text. */
+  if (util.isBinaryExt(path.extname(abs)) || await hasNulByte(abs)) {
+    return sendJSON(res, 200, {
+      project: project.name,
+      path: relPosix,
+      title: path.basename(relPosix),
+      kind: 'binary',
+      contentType: 'binary',
+      mediaType,
+      binary: true,
+      content: '',
+      sizeBytes: st.size,
+      mtimeISO: new Date(st.mtimeMs).toISOString(),
+    });
+  }
+
   if (st.size > DOC_MAX_BYTES) return sendError(res, 413, 'file too large');
 
   let content;
   try { content = await fsp.readFile(abs, 'utf8'); }
   catch { return sendError(res, 500, 'unreadable file'); }
 
-  const relPosix = path.relative(project.path, abs).split(path.sep).join('/');
   const known = project.docs.find((d) => d.path === relPosix);
   const kind = known ? known.kind : (docslib.classify(relPosix) || 'doc');
   const contentType = known ? known.contentType : docslib.contentTypeFor(relPosix);
@@ -341,10 +367,27 @@ async function handleDoc(res, query) {
     title,
     kind,
     contentType,
+    mediaType,
+    binary: false,
     content,
     sizeBytes: st.size,
     mtimeISO: new Date(st.mtimeMs).toISOString(),
   });
+}
+
+/** True if the first 4 KB hold a NUL byte: the cheap, reliable "not text" tell. */
+async function hasNulByte(abs) {
+  let fh = null;
+  try {
+    fh = await fsp.open(abs, 'r');
+    const buf = Buffer.alloc(4096);
+    const { bytesRead } = await fh.read(buf, 0, 4096, 0);
+    return buf.subarray(0, bytesRead).includes(0);
+  } catch {
+    return false;
+  } finally {
+    if (fh) await fh.close().catch(() => {});
+  }
 }
 
 async function handleRaw(req, res, query) {

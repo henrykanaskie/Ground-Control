@@ -150,12 +150,25 @@ word boundary at 240 chars with `…`.
 ### `GET /api/doc?id=<projectId>&path=<relPath>`
 ```jsonc
 { "project": "animAgent", "path": "docs/ONBOARDING.md", "title": "...",
-  "kind": "onboarding", "contentType": "markdown", "content": "<raw file text>",
+  "kind": "onboarding", "contentType": "markdown", "mediaType": "text/markdown; charset=utf-8",
+  "binary": false, "content": "<raw file text>",
   "sizeBytes": 18422, "mtimeISO": "..." }
 ```
+- Any file in the project may be read, not only the discovered documents: this
+  is what the file tree opens.
 - `path` MUST be resolved and verified to stay inside the project directory
   (reject `..`, absolute paths, and symlinks escaping the root) → 403.
-- Files over 2 MB → 413 `{ "error": "file too large" }`.
+- `mediaType` is the same MIME type `/api/raw` would send. It is what lets the
+  reader decide between an `<img>`, a player, a frame and a code view without
+  keeping its own table of extensions.
+- **A binary file is described, not decoded.** Detected by extension, then by a
+  NUL byte in the first 4 KB. The response is `200` with `"binary": true`,
+  `"contentType": "binary"` and `"content": ""`; the bytes themselves come from
+  `/api/raw`. Reading a PNG as UTF-8 would return a page of replacement
+  characters, which is worse than saying "this is an image".
+- Files over 2 MB → 413 `{ "error": "file too large" }`. The cap is on text
+  the reader holds in memory, so it does not apply to the binary case above: a
+  40 MB video previews, 40 MB of *text* does not.
 
 ### `GET /api/raw?id=<projectId>&path=<relPath>`
 Serves raw file bytes with a correct MIME type, used to load a project's HTML
@@ -221,7 +234,14 @@ ember accent used sparingly, generous whitespace, no drop shadows heavier than
 export function render(markdown, opts = {}) -> string   // trusted-safe HTML
 export function headings(markdown) -> Array<{ level:number, text:string, id:string }>
 export function plainText(markdown, maxChars) -> string
+export function langForPath(relPath) -> string          // '' when nothing can colour it
+export function highlightCode(code, lang) -> string     // escaped-safe HTML
 ```
+
+`langForPath` + `highlightCode` are the same highlighter the fenced blocks use,
+exposed so the reader can show a whole source file. `highlightCode` carries the
+same guarantee as `render`: every character it does not wrap in a token span
+comes back escaped.
 
 `opts`: `{ rawBase: "/api/raw?id=foo&path=", docBase: "/api/doc?id=foo&path=", basePath: "docs/" }`
 - Relative image `src` and link `href` are rewritten against `rawBase` + resolved
@@ -282,13 +302,32 @@ Cards are keyboard reachable (`tabindex`, Enter opens) and are real links.
 
 **Detail view:** header with name/status/git summary, a 90-day commit heatmap
 strip from `activity`, the doc list grouped by kind (onboarding first), the file
-tree, recent commits, and dirty files. Clicking a doc opens the reader.
+tree, recent commits, and dirty files. Clicking a doc opens the reader, and so
+does clicking any file in the tree. Tree rows are real controls: a file is a
+link, a directory is a button that folds its subtree away.
 
 **Reader:** rendered markdown in a centered column (max ~72ch) with a sticky
 right-hand TOC from `headings()`, the doc title, a back control, and a link to
 the raw file. `kind === "html"` docs open in a sandboxed iframe
 (`sandbox="allow-same-origin"`) pointed at `/api/raw`, with a note that it is a
 project artifact. Notebooks may fall back to a "raw" JSON view.
+
+The reader opens files that are not documents, choosing by `mediaType`:
+
+| what it is | what it shows |
+|---|---|
+| `image/*` | the image on a checkered ground, with its pixel dimensions |
+| `video/*`, `audio/*` | a player, `preload="metadata"` so nothing downloads until asked |
+| `application/pdf` | the browser's own PDF viewer in a frame, **not** sandboxed: `/api/raw` sends `application/pdf` with `nosniff`, so that frame can never become a page from the repository, and sandboxing it would only leave a blank box |
+| any other `binary` | a plain statement that there is nothing to show, the type, the size, and a link to the raw bytes |
+| everything else | the source, highlighted, with a line-number gutter |
+
+The gutter is a sibling column, not markup inside the code: the highlighter
+emits spans that run across line breaks, so splitting its output by line would
+tear them in half. The two columns stay aligned because the code is
+`white-space: pre`, which keeps one source line to one rendered line. Past
+300 KB the file is shown plain, because a minified bundle is one very long line
+and highlighting it costs real time for a result nobody can read.
 
 **Live updates:** subscribe to `/api/stream`; on a `projects` event, diff against
 current state and update in place without losing scroll or filter state. Briefly

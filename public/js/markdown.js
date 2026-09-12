@@ -840,6 +840,28 @@ export function normalizeLang(info) {
   return first;
 }
 
+/**
+ * The language key for a file path, or '' when nothing here can colour it.
+ * The alias table above is already keyed by extension, so an extension is the
+ * lookup; a file with no extension is looked up by its whole name, which is how
+ * `Makefile` and `Dockerfile` find a highlighter.
+ */
+export function langForPath(relPath) {
+  const base = String(relPath || '').split('/').pop().toLowerCase();
+  const dot = base.lastIndexOf('.');
+  const key = dot > 0 ? base.slice(dot + 1) : base;
+  return (LANG_ALIASES[key] || LANGS[key]) ? key : '';
+}
+
+/**
+ * Highlight a whole file the way a fenced block is highlighted. Returns
+ * escaped HTML: like `render()`, the input is a file off the user's disk, so
+ * every character that is not a token wrapper comes back escaped.
+ */
+export function highlightCode(code, lang) {
+  return highlight(String(code == null ? '' : code), normalizeLang(lang));
+}
+
 function highlight(code, lang) {
   const key = LANG_ALIASES[lang] || (LANGS[lang] ? lang : null);
   if (!key) return esc(code);

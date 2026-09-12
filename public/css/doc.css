@@ -6,7 +6,7 @@
  * the output of `render()`) or `.ground-control-doc-toc` (the reader's table of
  * contents). Nothing global is touched.
  *
- * The `--bg / --panel / --line / --text / --ember / ...` custom properties are
+ * The `--bg / --panel / --line / --text / --accent / ...` custom properties are
  * defined by app.css on `:root`. This file only CONSUMES them. The `--tok-*`
  * variables below are local to the document surface and are declared here
  * because only this file emits the classes that use them.
@@ -16,9 +16,12 @@
  * breaks long unbroken tokens (URLs, paths) rather than pushing the layout.
  * ========================================================================= */
 
-.ground-control-doc {
-  /* Syntax token palette: warm, ember-adjacent, with one cool anchor so code
-     reads as structured rather than decorated. Tuned for the obsidian panel. */
+/* Syntax token palette: warm, accent-adjacent, with one cool anchor so code
+   reads as structured rather than decorated. Tuned for the obsidian panel.
+   Declared on both surfaces that show highlighted code, a fenced block inside a
+   document and a whole source file in the reader, so the two never drift. */
+.ground-control-doc,
+.codeview {
   --tok-kw:      #ff9d76;
   --tok-str:     #a7d49b;
   --tok-com:     #737c8a;
@@ -32,9 +35,11 @@
   --tok-punc:    #98a0ac;
   --tok-tag:     #ff9d76;
   --tok-attr:    #c3a6f0;
+}
 
+.ground-control-doc {
   --doc-measure: 72ch;
-  --doc-rule: color-mix(in srgb, var(--ember) 34%, transparent);
+  --doc-rule: color-mix(in srgb, var(--accent) 34%, transparent);
 
   max-width: var(--doc-measure);
   min-width: 0;
@@ -52,7 +57,7 @@
 }
 
 .ground-control-doc ::selection {
-  background: color-mix(in srgb, var(--ember) 30%, transparent);
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
   color: var(--text);
 }
 
@@ -136,7 +141,7 @@
 .ground-control-doc h4:target,
 .ground-control-doc h5:target,
 .ground-control-doc h6:target {
-  color: var(--ember);
+  color: var(--accent);
 }
 
 /* Anchor affordance: hidden until the heading is hovered or the link focused. */
@@ -145,7 +150,7 @@
   padding: 0 0.1em;
   font-size: 0.78em;
   font-weight: 400;
-  color: var(--ember);
+  color: var(--accent);
   text-decoration: none;
   border: 0;
   opacity: 0;
@@ -167,7 +172,7 @@
  * ----------------------------------------------------------------------- */
 
 .ground-control-doc a {
-  color: var(--ember);
+  color: var(--accent);
   text-decoration: underline;
   text-decoration-color: var(--doc-rule);
   text-decoration-thickness: 1px;
@@ -176,13 +181,13 @@
 }
 
 .ground-control-doc a:hover {
-  color: var(--ember);
-  text-decoration-color: var(--ember);
+  color: var(--accent);
+  text-decoration-color: var(--accent);
 }
 
 .ground-control-doc a:focus-visible,
 .ground-control-doc .task-checkbox:focus-visible {
-  outline: 2px solid var(--ember);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 3px;
 }
@@ -205,7 +210,7 @@
 .ground-control-doc strong { font-weight: 640; color: var(--text); }
 .ground-control-doc em     { font-style: italic; }
 .ground-control-doc del    { color: var(--text-3); text-decoration-thickness: 1px; }
-.ground-control-doc mark   { background: var(--ember-glow); color: var(--text); }
+.ground-control-doc mark   { background: var(--accent-glow); color: var(--text); }
 
 /* --------------------------------------------------------------------------
  * Code
@@ -313,20 +318,20 @@
 .ground-control-doc .md-pre > code::-webkit-scrollbar-track,
 .ground-control-doc .md-table-wrap::-webkit-scrollbar-track { background: transparent; }
 
-/* Syntax tokens (emitted only for fenced blocks with a known language). */
-.ground-control-doc .tok-kw      { color: var(--tok-kw); }
-.ground-control-doc .tok-str     { color: var(--tok-str); }
-.ground-control-doc .tok-com     { color: var(--tok-com); font-style: italic; }
-.ground-control-doc .tok-num     { color: var(--tok-num); }
-.ground-control-doc .tok-fn      { color: var(--tok-fn); }
-.ground-control-doc .tok-type    { color: var(--tok-type); }
-.ground-control-doc .tok-builtin { color: var(--tok-builtin); }
-.ground-control-doc .tok-var     { color: var(--tok-var); }
-.ground-control-doc .tok-prop    { color: var(--tok-prop); }
-.ground-control-doc .tok-meta    { color: var(--tok-meta); }
-.ground-control-doc .tok-punc    { color: var(--tok-punc); }
-.ground-control-doc .tok-tag     { color: var(--tok-tag); }
-.ground-control-doc .tok-attr    { color: var(--tok-attr); }
+/* Syntax tokens, on either surface that emits them. */
+:is(.ground-control-doc, .codeview) .tok-kw      { color: var(--tok-kw); }
+:is(.ground-control-doc, .codeview) .tok-str     { color: var(--tok-str); }
+:is(.ground-control-doc, .codeview) .tok-com     { color: var(--tok-com); font-style: italic; }
+:is(.ground-control-doc, .codeview) .tok-num     { color: var(--tok-num); }
+:is(.ground-control-doc, .codeview) .tok-fn      { color: var(--tok-fn); }
+:is(.ground-control-doc, .codeview) .tok-type    { color: var(--tok-type); }
+:is(.ground-control-doc, .codeview) .tok-builtin { color: var(--tok-builtin); }
+:is(.ground-control-doc, .codeview) .tok-var     { color: var(--tok-var); }
+:is(.ground-control-doc, .codeview) .tok-prop    { color: var(--tok-prop); }
+:is(.ground-control-doc, .codeview) .tok-meta    { color: var(--tok-meta); }
+:is(.ground-control-doc, .codeview) .tok-punc    { color: var(--tok-punc); }
+:is(.ground-control-doc, .codeview) .tok-tag     { color: var(--tok-tag); }
+:is(.ground-control-doc, .codeview) .tok-attr    { color: var(--tok-attr); }
 
 /* --------------------------------------------------------------------------
  * Lists
@@ -380,10 +385,10 @@
 }
 
 .ground-control-doc .task-checkbox:checked {
-  background: var(--ember);
-  border-color: var(--ember);
+  background: var(--accent);
+  border-color: var(--accent);
   /* Inline SVG check mark: no external asset, no network request. */
-  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%230a0b0d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M2.5 6.2l2.3 2.3 4.7-5'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%23080d12' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M2.5 6.2l2.3 2.3 4.7-5'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: center;
   background-size: 82%;
@@ -401,9 +406,9 @@
   margin: 1.6em 0;
   padding: 0.65em 1.1em;
   color: var(--text-2);
-  border-left: 2px solid var(--ember);
+  border-left: 2px solid var(--accent);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--ember) 7%, transparent), transparent 55%);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent 55%);
 }
 
 .ground-control-doc blockquote > :first-child { margin-top: 0; }
@@ -569,7 +574,7 @@
 .ground-control-doc-toc a:hover { color: var(--text); }
 
 .ground-control-doc-toc a:focus-visible {
-  outline: 2px solid var(--ember);
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
@@ -577,8 +582,8 @@
 .ground-control-doc-toc a[aria-current="true"],
 .ground-control-doc-toc a[aria-current="location"],
 .ground-control-doc-toc .is-active > a {
-  color: var(--ember);
-  border-left-color: var(--ember);
+  color: var(--accent);
+  border-left-color: var(--accent);
 }
 
 /* Level indentation: data attribute, class, or real nesting. */
@@ -629,3 +634,70 @@
   }
   .ground-control-doc .heading-anchor { opacity: 0.4; }
 }
+
+/* --------------------------------------------------------------------------
+ * The code view: a whole source file, not an excerpt
+ *
+ * Two columns that must agree on where every line sits. The gutter holds the
+ * numbers and does not scroll sideways; the code scrolls under it. They stay
+ * aligned because both use the same font, the same line-height, and because
+ * `white-space: pre` on the code means one source line is always exactly one
+ * rendered line: no wrapping, so no number can drift off its row.
+ * ----------------------------------------------------------------------- */
+
+.codeview {
+  display: flex;
+  /* Each column sizes to the whole file, not to the visible window: stretched
+     to the container instead, the gutter's rule would stop partway down. */
+  align-items: flex-start;
+  max-height: 78vh;
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.62;
+  tab-size: 4;
+}
+
+.codeview .gut {
+  flex: none;
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  padding: 0.9rem 0.7rem 0.9rem 0.85rem;
+  text-align: right;
+  color: var(--text-3);
+  opacity: 0.55;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.codeview .gut span { display: block; }
+
+.codeview .cv-code {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0.9rem 1.05rem;
+  background: none;
+  border: 0;
+  color: var(--text);
+  white-space: pre;
+  font: inherit;
+}
+
+.codeview .cv-code > code {
+  font: inherit;
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+
+.codeview { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
+.codeview::-webkit-scrollbar { width: 9px; height: 9px; }
+.codeview::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 4px; }
+.codeview::-webkit-scrollbar-track { background: transparent; }
