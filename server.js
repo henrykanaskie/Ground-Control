@@ -1668,6 +1668,9 @@ const COMMS_PING_MS = 25000;
  * hook, and a chat's child is in its own process group, so it survives. This
  * is where that is found and stopped. */
 try {
+  // Beside sources.json, so `--config` isolates it (a demo or test server must
+  // never hydrate, and so reap, the real store's running turns).
+  commslib.setStoreFile(commslib.storePathFor(SOURCES.file));
   const rec = commslib.hydrate();
   if (rec.restored || rec.reaped) {
     console.log(`[comms] restored ${rec.restored} chat(s)`

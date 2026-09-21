@@ -134,7 +134,10 @@ Closing a chat removes Ground Control's record of it and **nothing else**. The
 conversation stays on disk, and the panel says so where the button is. This is
 the same promise Sources makes about removing a folder.
 
-Ground Control's own index lives at `~/.ground-control/comms.json`: chat ids,
+Ground Control's own index lives at `comms.json` beside the source registry
+(`~/.ground-control/comms.json` by default; `--config` moves it with
+`sources.json`, so a demo or test server never loads, and so never reaps, the
+real store's running turns): chat ids,
 titles, session ids, the pid of any turn in flight (§4a), and the turns as
 displayed. Written atomically (temp file + rename) at mode `0600`, on chat
 creation, removal and turn completion, never per delta. A chat that was
@@ -165,13 +168,19 @@ looks for it on the next start.
 The reap is deliberately narrow, because a pid recycled between the crash and
 the restart is the one way this could signal an unrelated process:
 
-1. `ps -o command=` the recorded pid.
+1. `ps -o ppid=,command=` the recorded pid, and the command of its parent.
 2. The command must be a `claude` invocation **and** carry one of that chat's
    own session ids. Those are UUIDs, so a coincidental match is not a thing
    that happens. "Is it named claude" is not good enough on its own: the user
    may well have started their own agent since.
-3. SIGTERM the group, never SIGKILL: the CLI flushes its transcript on term.
-4. The pid is cleared from the store either way, so a later start cannot
+3. It must actually be orphaned: reparented to PID 1, or to a parent that is
+   not `node`. A live `node` parent is another Ground Control server still
+   running that turn (two servers on one store), and it is left alone; the
+   restored turn says so instead. A session-id match proves the turn is ours,
+   not that nobody is running it: a demo server started against the real store
+   once stopped a live chat exactly this way.
+4. SIGTERM the group, never SIGKILL: the CLI flushes its transcript on term.
+5. The pid is cleared from the store either way, so a later start cannot
    re-signal a number that now belongs to someone else.
 
 The restored turn then tells the truth about which of the two things happened.

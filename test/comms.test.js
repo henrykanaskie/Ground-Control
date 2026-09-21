@@ -10,7 +10,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fixtureRoot, cleanupFixtures } from './helpers.js';
+import { fixtureRoot, cleanupFixtures, project, startServer } from './helpers.js';
 import * as comms from '../lib/comms.js';
 
 test.after(cleanupFixtures);
@@ -168,11 +168,14 @@ function storeWithOrphan(label, pid, overrides = {}) {
 const OUR_COMMAND = '/Users/me/.local/bin/claude -p --model claude-opus-5 --output-format stream-json '
   + '--verbose --include-partial-messages --permission-mode bypassPermissions --resume ' + SESSION;
 
+/** What inspectPid reports for a turn whose server was killed: reparented to launchd/init. */
+const ORPHANED = (command) => ({ command, ppid: 1, parentCommand: null });
+
 test('an agent that outlived the server is found and stopped, and the turn says so', () => {
   const { id } = storeWithOrphan('orphan-live', 4242);
   const killed = [];
   const summary = comms.hydrate({
-    inspect: (pid) => (pid === 4242 ? OUR_COMMAND : null),
+    inspect: (pid) => (pid === 4242 ? ORPHANED(OUR_COMMAND) : null),
     kill: (pid) => { killed.push(pid); return true; },
   });
 
@@ -192,7 +195,7 @@ test('a pid the OS handed to someone else is NEVER signalled', () => {
   // a different session. This is the case that would be a real bug.
   const someoneElse = '/Users/me/.local/bin/claude -p --resume 11111111-2222-3333-4444-555555555555';
   const summary = comms.hydrate({
-    inspect: () => someoneElse,
+    inspect: () => ORPHANED(someoneElse),
     kill: (pid) => { killed.push(pid); return true; },
   });
 
@@ -217,7 +220,7 @@ test('a pid that is gone is not signalled and reads as a plain interruption', ()
 
 test('the reaped pid is dropped from the store, so a later start cannot re-signal it', () => {
   const { id, file } = storeWithOrphan('orphan-stale', 4242);
-  comms.hydrate({ inspect: () => OUR_COMMAND, kill: () => true });
+  comms.hydrate({ inspect: () => ORPHANED(OUR_COMMAND), kill: () => true });
   assert.equal(comms.get(id).runningPid, null);
 
   // A pid is reused within hours on a busy machine, so a stale one left in the
@@ -244,6 +247,100 @@ test('the orphan match needs a claude command AND one of the chat’s own ids', 
     isOurOrphan('/Users/me/.local/bin/claude -p --resume ' + SESSION + ' --fork-session',
       { sessionId: null, resumeFrom: SESSION }),
     true);
+});
+
+test('a turn another live server is still running is NEVER signalled', () => {
+  // The incident this guards: a demo server started against the real store
+  // found a live chat's turn, matched its session id, and stopped it.
+  const { id, file } = storeWithOrphan('orphan-elsewhere', 4242);
+  const killed = [];
+  const summary = comms.hydrate({
+    inspect: () => ({ command: OUR_COMMAND, ppid: 9001, parentCommand: '/usr/local/bin/node /Applications/GroundControl.app/Contents/Resources/server.js --port 62450' }),
+    kill: (pid) => { killed.push(pid); return true; },
+  });
+
+  assert.equal(killed.length, 0, 'COMMS STOPPED A TURN ANOTHER SERVER OWNS');
+  assert.equal(summary.reaped, 0);
+  assert.equal(summary.elsewhere, 1);
+  const turn = comms.get(id).turns.find((t) => t.id === 'a1');
+  assert.equal(turn.errorKind, 'elsewhere');
+  assert.match(turn.error, /Another running Ground Control/);
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).chats.find((c) => c.id === id).runningPid, null,
+    'the pid is not ours to keep either');
+  comms.remove(id);
+});
+
+test('orphaned means reparented: to PID 1, or to a parent that is not node', () => {
+  const { isOrphaned } = comms._internals();
+  assert.equal(isOrphaned({ command: OUR_COMMAND, ppid: 1, parentCommand: null }), true, 'launchd / init');
+  assert.equal(isOrphaned({ command: OUR_COMMAND, ppid: 812, parentCommand: '/lib/systemd/systemd --user' }), true, 'a subreaper');
+  assert.equal(isOrphaned({ command: OUR_COMMAND, ppid: 812, parentCommand: null }), true, 'parent gone between the two ps calls');
+  assert.equal(isOrphaned({ command: OUR_COMMAND, ppid: 812, parentCommand: '/usr/local/bin/node server.js' }), false);
+  assert.equal(isOrphaned({ command: OUR_COMMAND, ppid: 812, parentCommand: 'node server.js --port 4799' }), false);
+  assert.equal(isOrphaned({ command: OUR_COMMAND, ppid: 812, parentCommand: '/opt/nodes/bin/nodemon x' }), true, 'name must not match by prefix');
+  assert.equal(isOrphaned(null), false, 'nothing to inspect is never a reason to kill');
+});
+
+test('a real claude-named process with a live parent survives hydrate, end to end', async () => {
+  // No mocks: a real child of this (node) test process, whose argv carries the
+  // chat's session id, read back through the real inspectPid.
+  const { spawn } = await import('node:child_process');
+  const dir = fixtureRoot('fake-claude');
+  const bin = path.join(dir, 'claude');
+  fs.writeFileSync(bin, '#!/bin/sh\nsleep 30\n', { mode: 0o755 });
+  const child = spawn('/bin/sh', [bin, '-p', '--resume', SESSION], { stdio: 'ignore', detached: true });
+  try {
+    await new Promise((r) => setTimeout(r, 150));
+    const { id } = storeWithOrphan('orphan-real', child.pid);
+    const info = comms._internals().inspectPid(child.pid);
+    assert.ok(info && info.command.includes(SESSION), 'inspectPid should see the fake agent');
+    assert.equal(info.ppid, process.pid);
+
+    const summary = comms.hydrate();       // the real inspect and the real kill
+    assert.equal(summary.reaped, 0);
+    assert.equal(summary.elsewhere, 1);
+    assert.equal(child.exitCode, null);
+    assert.equal(child.signalCode, null, 'THE LIVE PROCESS WAS SIGNALLED');
+    comms.remove(id);
+  } finally {
+    try { process.kill(-child.pid, 'SIGKILL'); } catch { /* already gone */ }
+  }
+});
+
+/* ---- the store follows --config ------------------------------------ */
+
+test('the comms store sits beside sources.json, and defaults to ~/.ground-control', () => {
+  assert.equal(comms.storePathFor('/tmp/x/cfg/sources.json'), '/tmp/x/cfg/comms.json');
+  assert.equal(comms.storePathFor(undefined, '/Users/me'), '/Users/me/.ground-control/comms.json');
+  assert.equal(comms.storePathFor('  ', '/Users/me'), '/Users/me/.ground-control/comms.json');
+});
+
+test('a server started with --config reads and writes comms.json in that directory', async () => {
+  const root = fixtureRoot('comms-config-root');
+  project(root, 'alpha');
+  const cfgDir = fixtureRoot('comms-config');
+  const config = path.join(cfgDir, 'sources.json');
+
+  // Learn the project id the server assigns, then seed a chat for it.
+  let srv = await startServer(root, { config });
+  let alpha;
+  try {
+    alpha = (await srv.json('/api/projects')).projects.find((p) => p.name === 'alpha');
+  } finally { srv.stop(); }
+  assert.ok(alpha, 'fixture project should be listed');
+
+  const store = path.join(cfgDir, 'comms.json');
+  fs.writeFileSync(store, JSON.stringify({ version: 1, chats: [{
+    id: 'chat_isolated', projectId: alpha.id, projectName: 'alpha', projectPath: alpha.path,
+    title: 'seeded', turns: [], createdISO: new Date().toISOString(),
+  }] }));
+
+  srv = await startServer(root, { config });
+  try {
+    const listed = await srv.json('/api/comms/project/' + encodeURIComponent(alpha.id));
+    assert.deepEqual(listed.chats.map((c) => c.id), ['chat_isolated'],
+      'the chat seeded beside --config must be the one the server loaded');
+  } finally { srv.stop(); }
 });
 
 /* ---- observing our own children ------------------------------------ */
