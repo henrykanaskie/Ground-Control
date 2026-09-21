@@ -194,3 +194,52 @@ corrupt, alien and missing files; junk rows; the fold onto a project list; the
 Reclaim blocker as a unit and over HTTP; the full mark/read/unmark round trip;
 id validation; and that marking leaves the project folder byte-for-byte
 untouched.
+
+---
+
+## 7. Ongoing: the project that is never finished
+
+Some projects are never meant to be done: a personal site, a profile README, a
+dotfiles folder. They are kept up to date for as long as they exist, and they go
+quiet between updates. Unmarked, one of them looks abandoned; marked complete,
+it would be lying. **Ongoing** is the second declaration, and it says "this is
+maintained on purpose and will never be finished".
+
+```
+                    what the user declares
+                            |
+        +-------------------+-------------------+
+        |                   |                   |
+     complete            ongoing             neither
+   finished, done    kept current forever   Ground Control
+                                            judges by evidence
+```
+
+A project carries **one of the two or neither, never both**. Setting either one
+clears the other, in `Marks.setKind()`, so no caller can produce the
+contradiction. A hand-edited file that names a path in both lists loads it as
+complete.
+
+Everything in §0 to §5 applies unchanged, with these differences:
+
+- **Storage**: a second array in the same `marks.json`. A file written before
+  this existed has no `ongoing` key, and that is a normal load.
+  ```jsonc
+  { "version": 1, "completed": [ ... ],
+    "ongoing": [ { "path": "/abs/path", "ongoingISO": "..." } ] }
+  ```
+- **API**: `GET /api/ongoing`, `POST /api/ongoing/:id`, `DELETE /api/ongoing/:id`,
+  with the same guards as §3. A POST body of `{ "ongoing": false }` is honoured.
+  Both `/api/complete/:id` and `/api/ongoing/:id` answer with **both** marks, so
+  the client can repaint the one that was just cleared.
+- **`ProjectSummary`** gains `ongoing` and `ongoingISO` beside `completed`.
+- **UI**: violet, `--ongoing: #a594e8`, with an infinity icon and the word
+  "ongoing". Not green, because it is not an end state. On an unmarked card both
+  grey pills fade in on hover; on a marked card only its own badge shows, and
+  pressing it clears the mark. The detail view always shows both buttons, so
+  switching from one to the other is a single press there.
+- **Reclaim**: one more blocker, for the same reason as §5.
+  ```
+  marked-ongoing   This project is marked ongoing: kept up to date on purpose,
+                   never meant to be finished.
+  ```

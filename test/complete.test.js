@@ -286,3 +286,101 @@ test('marking never touches the project folder', async () => {
     srv.stop();
   }
 });
+
+/* ------------------------------------------------------------------ *
+ * Ongoing — the project that is never finished (CONTRACT-COMPLETE.md §7)
+ * ------------------------------------------------------------------ */
+
+test('ongoing and complete are exclusive: setting one clears the other', () => {
+  const m = marksIn('ongoing-exclusive');
+  m.set('/projects/site', true);
+  const on = m.setOngoing('/projects/site', true);
+  assert.equal(on.ongoing, true);
+  assert.ok(on.ongoingISO);
+  assert.equal(on.completed, false, 'marking ongoing cleared complete');
+  assert.equal(m.count(), 0);
+  assert.equal(m.ongoingCount(), 1);
+
+  const back = m.set('/projects/site', true);
+  assert.equal(back.completed, true);
+  assert.equal(back.ongoing, false, 'and the other way round');
+});
+
+test('an ongoing mark survives a restart, and an older file without one still loads', () => {
+  const dir = fixtureRoot('ongoing-persist');
+  const file = path.join(dir, 'marks.json');
+  const first = new Marks({ file });
+  first.setOngoing('/projects/site', true);
+  first.set('/projects/done', true);
+
+  const second = new Marks({ file });
+  assert.equal(second.isOngoing('/projects/site'), true);
+  assert.equal(second.has('/projects/done'), true);
+
+  const legacy = path.join(dir, 'legacy.json');
+  fs.writeFileSync(legacy, JSON.stringify({ version: 1, completed: [{ path: '/projects/old' }] }));
+  const third = new Marks({ file: legacy });
+  assert.equal(third.loadError, null);
+  assert.equal(third.has('/projects/old'), true);
+  assert.equal(third.ongoingCount(), 0);
+});
+
+test('a path hand-edited into both lists loads as complete only', () => {
+  const file = path.join(fixtureRoot('ongoing-both'), 'marks.json');
+  fs.writeFileSync(file, JSON.stringify({
+    version: 1,
+    completed: [{ path: '/projects/x' }],
+    ongoing: [{ path: '/projects/x' }, { path: '/projects/y' }],
+  }));
+  const m = new Marks({ file });
+  assert.equal(m.has('/projects/x'), true);
+  assert.equal(m.isOngoing('/projects/x'), false);
+  assert.equal(m.isOngoing('/projects/y'), true);
+});
+
+test('a project marked ongoing is blocked from removal', async () => {
+  const root = fixtureRoot('ongoing-reclaim');
+  const dir = project(root, 'site', { files: {} });
+  age(dir, 200);
+  const res = await scanRoot(root);
+  const summary = (res.projects || res).find((x) => x.name === 'site');
+  const quiet = { root, agent: { state: 'none', live: 0 } };
+
+  const after = await assessProject(Object.assign({}, summary, { ongoing: true }), quiet);
+  assert.equal(after.verdict, 'keep');
+  assert.ok(after.blockers.some((b) => b.code === 'marked-ongoing'));
+});
+
+test('a project can be marked ongoing over HTTP, and it replaces complete', async () => {
+  const root = fixtureRoot('ongoing-http');
+  project(root, 'homepage', { files: { 'README.md': '# homepage\n' } });
+  const srv = await startServer(root);
+  try {
+    const first = await srv.json('/api/projects');
+    const hp = first.projects.find((p) => p.name === 'homepage');
+    assert.equal(hp.ongoing, false);
+    assert.equal(hp.ongoingISO, null);
+
+    await srv.postJson('/api/complete/' + hp.id, { completed: true });
+    const marked = await srv.postJson('/api/ongoing/' + hp.id, { ongoing: true });
+    assert.equal(marked.status, 200);
+    assert.equal(marked.json.ongoing, true);
+    assert.equal(marked.json.completed, false, 'the payload says complete went away');
+
+    const second = await srv.json('/api/projects?fresh=1');
+    const row = second.projects.find((p) => p.id === hp.id);
+    assert.equal(row.ongoing, true);
+    assert.equal(row.completed, false);
+
+    const list = await srv.json('/api/ongoing');
+    assert.deepEqual(list.ongoing.map((r) => r.path), [hp.path]);
+
+    const cleared = await srv.del('/api/ongoing/' + hp.id);
+    assert.equal(cleared.json.ongoing, false);
+
+    const traversal = await srv.postJson('/api/ongoing/..%2F..%2Fetc', { ongoing: true });
+    assert.equal(traversal.status, 404);
+  } finally {
+    srv.stop();
+  }
+});

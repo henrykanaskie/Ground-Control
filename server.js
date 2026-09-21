@@ -598,7 +598,12 @@ async function route(req, res) {
   // Completed marks (CONTRACT-COMPLETE.md §3). Marking is a POST and unmarking
   // a DELETE; the handler checks methods itself.
   if (pathname === '/api/complete' || pathname.startsWith('/api/complete/')) {
-    return handleComplete(req, res, pathname);
+    return handleComplete(req, res, pathname, 'completed');
+  }
+  // Its sibling, the ongoing mark (CONTRACT-COMPLETE.md §7), is the same
+  // handler with the other kind.
+  if (pathname === '/api/ongoing' || pathname.startsWith('/api/ongoing/')) {
+    return handleComplete(req, res, pathname, 'ongoing');
   }
 
   if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -2391,27 +2396,37 @@ async function sourcesPick(res) {
 
 const COMPLETE_LOCAL_ONLY_MESSAGE =
   'Projects can only be marked complete from the machine Ground Control is running on.';
+const ONGOING_LOCAL_ONLY_MESSAGE =
+  'Projects can only be marked ongoing from the machine Ground Control is running on.';
 
-async function handleComplete(req, res, pathname) {
+async function handleComplete(req, res, pathname, kind) {
+  const base = kind === 'ongoing' ? '/api/ongoing' : '/api/complete';
   /* Reading the list back is harmless; changing it is loopback-only. */
-  const readOnlyList = pathname === '/api/complete' && (req.method === 'GET' || req.method === 'HEAD');
+  const readOnlyList = pathname === base && (req.method === 'GET' || req.method === 'HEAD');
   if (!readOnlyList && !isLocalRequest(req)) {
-    return sendError(res, 403, COMPLETE_LOCAL_ONLY_MESSAGE);
+    return sendError(res, 403, kind === 'ongoing' ? ONGOING_LOCAL_ONLY_MESSAGE : COMPLETE_LOCAL_ONLY_MESSAGE);
   }
 
-  if (pathname === '/api/complete') {
+  if (pathname === base) {
     if (req.method === 'GET' || req.method === 'HEAD') {
-      return sendJSON(res, 200, {
-        completed: MARKS.all(),
-        count: MARKS.count(),
-        file: MARKS.file,
-        saveError: MARKS.saveError || null,
-      });
+      return sendJSON(res, 200, kind === 'ongoing'
+        ? {
+          ongoing: MARKS.allOngoing(),
+          count: MARKS.ongoingCount(),
+          file: MARKS.file,
+          saveError: MARKS.saveError || null,
+        }
+        : {
+          completed: MARKS.all(),
+          count: MARKS.count(),
+          file: MARKS.file,
+          saveError: MARKS.saveError || null,
+        });
     }
     return sendError(res, 405, 'method not allowed');
   }
 
-  const rest = pathname.slice('/api/complete/'.length);
+  const rest = pathname.slice(base.length + 1);
   if (!rest || rest.indexOf('/') !== -1) return sendError(res, 404, 'unknown endpoint');
 
   const id = safeDecode(rest);
@@ -2421,8 +2436,8 @@ async function handleComplete(req, res, pathname) {
   if (!sourceIdIsPlain(id)) return sendError(res, 404, 'unknown project');
 
   if (req.method === 'GET' || req.method === 'HEAD') return completeRead(res, id);
-  if (req.method === 'POST' || req.method === 'PUT') return completeSet(req, res, id, true);
-  if (req.method === 'DELETE') return completeSet(req, res, id, false);
+  if (req.method === 'POST' || req.method === 'PUT') return completeSet(req, res, id, kind, true);
+  if (req.method === 'DELETE') return completeSet(req, res, id, kind, false);
   return sendError(res, 405, 'method not allowed');
 }
 
@@ -2435,24 +2450,26 @@ async function completeRead(res, id) {
 /**
  * Set or clear the mark.
  *
- * A POST body of `{ "completed": false }` is honoured, so a client that would
- * rather send one method can. The path written is the project's own, taken
+ * A POST body of `{ "completed": false }` (or `{ "ongoing": false }` for the
+ * other kind) is honoured, so a client that would rather send one method can.
+ * Setting either mark clears the other; the payload carries both, so the
+ * client can repaint whichever one just went away. The path written is the project's own, taken
  * from the scan: the request names a project, never a path, so there is no
  * user-supplied path to guard here at all.
  */
-async function completeSet(req, res, id, fallback) {
+async function completeSet(req, res, id, kind, fallback) {
   let want = fallback;
   if (req.method === 'POST' || req.method === 'PUT') {
     let body;
     try { body = await readJsonBody(req); }
     catch (err) { return sendError(res, err.status || 400, err.message || 'bad request'); }
-    if (Object.prototype.hasOwnProperty.call(body, 'completed')) want = Boolean(body.completed);
+    if (Object.prototype.hasOwnProperty.call(body, kind)) want = Boolean(body[kind]);
   }
 
   const project = await findProject(id);
   if (!project) return sendError(res, 404, 'unknown project');
 
-  const result = MARKS.set(project.path, want);
+  const result = MARKS.setKind(project.path, kind, want);
   if (!result) return sendError(res, 400, 'that project has no path to mark');
   if (MARKS.saveError) {
     // The in-memory mark still applied, so say what happened rather than
@@ -2462,6 +2479,8 @@ async function completeSet(req, res, id, fallback) {
 
   project.completed = result.completed;
   project.completedISO = result.completedISO;
+  project.ongoing = result.ongoing;
+  project.ongoingISO = result.ongoingISO;
   marksChanged();
 
   return sendJSON(res, 200, Object.assign(completePayload(project), {
@@ -2476,5 +2495,7 @@ function completePayload(project) {
     path: project.path,
     completed: Boolean(project.completed),
     completedISO: project.completedISO || null,
+    ongoing: Boolean(project.ongoing),
+    ongoingISO: project.ongoingISO || null,
   };
 }

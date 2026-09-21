@@ -33,6 +33,9 @@
 
   /* Complete: green, the one colour in here that means an end state. */
   --done:#5fae7f; --done-line:#2f5a43; --done-tint:rgba(95,174,127,.10);
+  /* Ongoing: violet, the one colour in here that means "maintained forever,
+     never finished". Not green, because it is not an end state. */
+  --ongoing:#a594e8; --ongoing-line:#433b6b; --ongoing-tint:rgba(165,148,232,.10);
 
   /* Destructive. Was ten raw hex literals scattered through this file. */
   --danger:#e8827f; --danger-line:#5a2a2a; --danger-tint:rgba(232,130,127,.09);
@@ -452,6 +455,14 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 .card.is-complete:hover{border-color:var(--done);background:var(--panel-2)}
 .card.is-complete.is-empty{border-style:solid}
 
+/* The card's toggles sit in one group, so two unmarked pills space evenly. */
+.cmpl-marks{position:relative;z-index:3;flex:none;display:inline-flex;gap:5px;margin-left:8px}
+.cmpl-marks .cmpl-mark{margin-left:0}
+/* Unmarked, the pair is two hidden pills wide, enough to shove the date off
+   the title's line on a narrow card. It goes to the end of the header instead,
+   into the row Open already occupies, so a card at rest keeps its shape. */
+.cmpl-marks.is-unset{order:1;margin-left:0}
+
 /* The card's toggle. Unmarked it is an empty circle that stays out of the way
    until the card is engaged, exactly as .wb-open does; marked it is the badge
    itself, always visible, because a finished card should say so from across
@@ -495,6 +506,26 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 .cmpl-b.is-on{color:var(--done);border-color:var(--done-line);background:var(--done-tint)}
 .cmpl-b.is-on:hover{border-color:var(--done);background:rgba(95,174,127,.16)}
 .cmpl-b .icon{width:14px;height:14px}
+
+/* ── ongoing: kept up to date forever (CONTRACT-COMPLETE.md §7) ───────── */
+/* The same quiet treatment as complete, in its own colour. */
+.card.is-ongoing{border-color:var(--ongoing-line);background:var(--panel)}
+.card.is-ongoing::before{box-shadow:inset 0 0 0 1px rgba(165,148,232,.24)}
+.card.is-ongoing:hover{border-color:var(--ongoing);background:var(--panel-2)}
+.card.is-ongoing.is-empty{border-style:solid}
+
+.cmpl-mark.cmpl-ongoing:hover{border-color:var(--ongoing-line);color:var(--ongoing);background:var(--ongoing-tint)}
+.cmpl-mark.cmpl-ongoing.is-on{
+  background:var(--ongoing-tint);border-color:rgba(165,148,232,.30);color:var(--ongoing);
+}
+.cmpl-mark.cmpl-ongoing.is-on:hover{border-color:var(--ongoing);background:rgba(165,148,232,.18)}
+
+.pill.is-ongoing{color:var(--ongoing);border-color:var(--ongoing-line);background:var(--ongoing-tint)}
+.pill.is-ongoing .icon{opacity:1;stroke-width:2}
+
+.cmpl-b.cmpl-ongoing:hover{border-color:var(--ongoing-line);color:var(--ongoing);background:var(--ongoing-tint)}
+.cmpl-b.cmpl-ongoing.is-on{color:var(--ongoing);border-color:var(--ongoing-line);background:var(--ongoing-tint)}
+.cmpl-b.cmpl-ongoing.is-on:hover{border-color:var(--ongoing);background:rgba(165,148,232,.16)}
 
 /* SSE pulse + enter/exit */
 @keyframes pulse{

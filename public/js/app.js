@@ -600,6 +600,7 @@ function signature(p) {
     (p.sourceId || '') + ':' + (srcMulti() ? (p.sourceLabel || '') : ''),
     // Complete §4: marking and unmarking must repaint the card.
     p.completed ? 'done' : '',
+    p.ongoing ? 'ongoing' : '',
   ].join('\u0001');
 }
 
@@ -610,6 +611,7 @@ function fillCard(card, p) {
   card._sig = signature(p);
   card.classList.toggle('is-empty', p.status === 'empty');
   card.classList.toggle('is-complete', !!p.completed);      // Complete §4
+  card.classList.toggle('is-ongoing', !!p.ongoing);         // Complete §7
   clear(card);
 
   srcCardChip(card, p);                                 // Sources §5
@@ -985,6 +987,7 @@ function paintDetail(box, d) {
   head.append(h('div', 'dpath mono', d.path || ''));
   const actions = h('div', 'dtrash');
   actions.append(cmplAction(d));                        // Complete §4
+  actions.append(cmplAction(d, 'ongoing'));             // Complete §7
   actions.append(trashAction(d));
   srcDetachAction(actions, d);                          // Sources §5
   head.append(actions);
@@ -6025,55 +6028,88 @@ if (document.readyState === 'loading') {
  * ========================================================================= */
 
 /**
- * The card's toggle, and the whole of the grid's affordance.
+ * The two declarations a project can carry, and everything that differs
+ * between them. Complete (§4) is the end state; ongoing (§7) is its opposite,
+ * the project that is kept up to date forever and will never be done.
+ */
+const CMPL_KINDS = {
+  completed: {
+    api: '/api/complete/', word: 'complete', Word: 'Complete', cls: 'is-complete',
+    on: 'i-check', isoKey: 'completedISO',
+    record: (n) => 'Record that ' + n + ' is finished. Nothing in the folder changes.',
+  },
+  ongoing: {
+    api: '/api/ongoing/', word: 'ongoing', Word: 'Ongoing', cls: 'is-ongoing',
+    on: 'i-infinity', isoKey: 'ongoingISO',
+    record: (n) => 'Record that ' + n + ' is never finished, only kept up to date. Nothing in the folder changes.',
+  },
+};
+
+/**
+ * The card's toggles, and the whole of the grid's affordance.
  *
- * Two states, deliberately asymmetric:
+ *   marked    the badge for that mark (green COMPLETE, or violet ONGOING),
+ *             always visible, and clicking it clears the mark. The badge
+ *             already looked like the thing you would press; making it the
+ *             button costs no extra furniture. The other choice is hidden:
+ *             the two are exclusive, and switching is a clear then a mark.
+ *   unmarked  both choices as grey pills that fade in on hover or focus,
+ *             beside Open. Marking is rare and a card must stay calm, so
+ *             nothing shows until you engage with that card.
  *
- *   marked    the green COMPLETE badge, always visible, and clicking it
- *             clears the mark. The badge already looked like the thing you
- *             would press; making it the button costs no extra furniture.
- *   unmarked  an empty circle that fades in on hover or focus, beside Open.
- *             Marking is rare and a card must stay calm, so nothing shows
- *             until you engage with that card.
- *
- * Both sit above the card's stretched title link (z-index, like .wb-open), so
+ * All sit above the card's stretched title link (z-index, like .wb-open), so
  * pressing one marks the project instead of opening it.
  */
 function cmplCardToggle(p) {
-  const done = !!p.completed;
-  const b = h('button', 'cmpl-mark' + (done ? ' is-on' : ''));
+  const wrap = h('span', 'cmpl-marks');
+  if (p.completed) wrap.append(cmplCardPill(p, 'completed'));
+  else if (p.ongoing) wrap.append(cmplCardPill(p, 'ongoing'));
+  else {
+    wrap.classList.add('is-unset');
+    wrap.append(cmplCardPill(p, 'completed'), cmplCardPill(p, 'ongoing'));
+  }
+  return wrap;
+}
+
+function cmplCardPill(p, kind) {
+  const k = CMPL_KINDS[kind];
+  const on = !!p[kind];
+  const name = p.name || p.id;
+  const b = h('button', 'cmpl-mark cmpl-' + k.word + (on ? ' is-on' : ''));
   b.type = 'button';
-  b.dataset.part = 'complete';
-  b.setAttribute('aria-pressed', String(done));
+  b.dataset.part = k.word;
+  b.setAttribute('aria-pressed', String(on));
 
   /* Both states carry the word, and the same pill shape, so the control is
    * self-explanatory the first time it appears and nothing shifts when it
    * flips. An icon alone read as decoration. */
-  b.append(icon(done ? 'i-check' : 'i-circle'), h('span', 'cmpl-mark-t', 'complete'));
-  b.title = done
-    ? (p.completedISO ? 'Marked complete ' + relTime(p.completedISO) : 'Marked complete')
+  b.append(icon(on ? k.on : 'i-circle'), h('span', 'cmpl-mark-t', k.word));
+  b.title = on
+    ? (p[k.isoKey] ? 'Marked ' + k.word + ' ' + relTime(p[k.isoKey]) : 'Marked ' + k.word)
       + '. Click to clear the mark.'
-    : 'Mark ' + (p.name || p.id) + ' complete. Nothing in the folder changes.';
-  b.setAttribute('aria-label', done
-    ? 'Clear the complete mark on ' + (p.name || p.id)
-    : 'Mark ' + (p.name || p.id) + ' complete');
+    : k.record(name);
+  b.setAttribute('aria-label', on
+    ? 'Clear the ' + k.word + ' mark on ' + name
+    : 'Mark ' + name + ' ' + k.word);
 
   b.addEventListener('click', (ev) => {
     // The whole card is a link. This is not part of it.
     ev.preventDefault();
     ev.stopPropagation();
-    cmplToggle(b, p, !done);
+    cmplToggle(b, p, !on, kind);
   });
   return b;
 }
 
 /** The matching pill in the detail header's status row. */
 function cmplPill(row, d) {
-  if (!d.completed) return;
-  const pill = h('span', 'pill is-complete');
-  pill.append(icon('i-check'), h('span', null, 'Complete'));
-  if (d.completedISO) {
-    pill.title = 'Marked complete ' + relTime(d.completedISO) + ' (' + fmtDate(d.completedISO) + ')';
+  const kind = d.completed ? 'completed' : d.ongoing ? 'ongoing' : null;
+  if (!kind) return;
+  const k = CMPL_KINDS[kind];
+  const pill = h('span', 'pill ' + k.cls);
+  pill.append(icon(k.on), h('span', null, k.Word));
+  if (d[k.isoKey]) {
+    pill.title = 'Marked ' + k.word + ' ' + relTime(d[k.isoKey]) + ' (' + fmtDate(d[k.isoKey]) + ')';
   }
   row.append(pill);
 }
@@ -6084,28 +6120,34 @@ function cmplPill(row, d) {
  * No confirmation either way: this writes one line to Ground Control's own
  * config and nothing else, and the undo is the same button.
  */
-function cmplAction(d) {
-  const done = !!d.completed;
-  const b = h('button', 'btn btn-sm cmpl-b' + (done ? ' is-on' : ''));
+function cmplAction(d, kind = 'completed') {
+  const k = CMPL_KINDS[kind];
+  const on = !!d[kind];
+  const b = h('button', 'btn btn-sm cmpl-b cmpl-' + k.word + (on ? ' is-on' : ''));
   b.type = 'button';
-  b.append(icon(done ? 'i-check' : 'i-circle'),
-    h('span', null, done ? 'Marked complete' : 'Mark complete'));
-  b.title = done
+  b.append(icon(on ? k.on : 'i-circle'),
+    h('span', null, (on ? 'Marked ' : 'Mark ') + k.word));
+  /* Both buttons are always here, so switching is one press: the server
+   * clears the other mark, and the title says so up front. */
+  const other = kind === 'ongoing' ? 'completed' : 'ongoing';
+  b.title = on
     ? 'Clear the mark on ' + (d.name || d.id) + '. The folder is not touched either way.'
-    : 'Record that ' + (d.name || d.id) + ' is finished. Nothing in the folder changes.';
-  b.setAttribute('aria-pressed', String(done));
-  b.addEventListener('click', () => cmplToggle(b, d, !done));
+    : k.record(d.name || d.id)
+      + (d[other] ? ' This replaces the ' + CMPL_KINDS[other].word + ' mark.' : '');
+  b.setAttribute('aria-pressed', String(on));
+  b.addEventListener('click', () => cmplToggle(b, d, !on, kind));
   return b;
 }
 
-async function cmplToggle(button, d, want) {
+async function cmplToggle(button, d, want, kind = 'completed') {
+  const k = CMPL_KINDS[kind];
   button.disabled = true;
   button.classList.add('is-busy');
   try {
-    const data = await getJSON('/api/complete/' + encodeURIComponent(d.id), {
+    const data = await getJSON(k.api + encodeURIComponent(d.id), {
       method: want ? 'POST' : 'DELETE',
       headers: { 'content-type': 'application/json', accept: 'application/json' },
-      body: want ? JSON.stringify({ completed: true }) : undefined,
+      body: want ? JSON.stringify({ [kind]: true }) : undefined,
     });
 
     /* Update what is already on screen rather than waiting for the rescan the
@@ -6119,7 +6161,7 @@ async function cmplToggle(button, d, want) {
     if (data.saveError) {
       wbToast('Marked in this session only: ' + data.saveError, 'bad');
     } else {
-      wbToast((d.name || d.id) + (want ? ' is marked complete.' : ' is no longer marked complete.'), 'ok');
+      wbToast((d.name || d.id) + (want ? ' is marked ' : ' is no longer marked ') + k.word + '.', 'ok');
     }
   } catch (err) {
     button.disabled = false;
@@ -6130,14 +6172,19 @@ async function cmplToggle(button, d, want) {
 
 /** Fold one server answer into every copy of that project the page is holding. */
 function cmplApply(id, data) {
-  const completed = !!(data && data.completed);
-  const completedISO = (data && data.completedISO) || null;
+  /* Both marks, every time: setting one may have just cleared the other. */
+  const marks = {
+    completed: !!(data && data.completed),
+    completedISO: (data && data.completedISO) || null,
+    ongoing: !!(data && data.ongoing),
+    ongoingISO: (data && data.ongoingISO) || null,
+  };
 
   const p = state.byId.get(id);
-  if (p) { p.completed = completed; p.completedISO = completedISO; }
+  if (p) Object.assign(p, marks);
 
   const detail = state.detailCache.get(id);
-  if (detail) { detail.completed = completed; detail.completedISO = completedISO; }
+  if (detail) Object.assign(detail, marks);
 
   const card = state.cards.get(id);
   if (card && p) fillCard(card, p);
