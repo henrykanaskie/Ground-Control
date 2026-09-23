@@ -1808,15 +1808,23 @@ function prefersReducedMotion() {
  * from a running job and back re-attaches instead of orphaning it.
  * ========================================================================= */
 
-/* Fallback only: /api/forge/status may ship its own `models` list, which wins. */
-const FORGE_MODELS = ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5'];
+/* Fallback only: /api/forge/status ships the real list from lib/models.js and
+ * wins whenever it is there. Keep the two in step when a model is added. */
+const FORGE_MODELS = ['claude-opus-5', 'claude-fable-5', 'claude-sonnet-5', 'claude-haiku-4-5'];
 
+/* A bare family name (`opus`, `sonnet`) is resolved by the CLI to the newest
+ * model in that family at the moment the run starts, so it never goes stale. */
 const MODEL_NOTE = {
   'claude-opus-5': 'most thorough',
   'claude-opus-4-8': 'most thorough',
+  'claude-fable-5': 'most capable, slowest',
   'claude-sonnet-5': 'faster',
   'claude-sonnet-4-5': 'faster',
   'claude-haiku-4-5': 'quickest',
+  opus: 'always the newest Opus',
+  fable: 'always the newest Fable',
+  sonnet: 'always the newest Sonnet',
+  haiku: 'always the newest Haiku',
 };
 
 function forgeModels() {

@@ -22,6 +22,7 @@ import * as docslib from './lib/docs.js';
 import * as brieflib from './lib/brief.js';
 import * as jobslib from './lib/jobs.js';
 import * as generate from './lib/generate.js';
+import * as modelslib from './lib/models.js';
 // The local-model tier (CONTRACT-LOCAL.md): ollama status and model list.
 import * as locallib from './lib/local.js';
 // The source registry (CONTRACT-SOURCES.md): every folder Ground Control watches.
@@ -711,7 +712,8 @@ const FORGE_PING_MS = 25000;
 // Agent F owns the canonical DEFAULT_MODEL. Pick it up if the module is there,
 // otherwise fall back so Forge still works during parallel development.
 let FORGE_DEFAULT_MODEL = generate.FALLBACK_MODEL;
-const FORGE_MODELS = ['claude-opus-5', 'claude-sonnet-4-5', 'claude-haiku-4-5'];
+// One list, lib/models.js, shared with Comms and shipped to the browser.
+const FORGE_MODELS = modelslib.MODELS;
 import('./lib/house-style.js')
   .then((m) => { if (m && typeof m.DEFAULT_MODEL === 'string') FORGE_DEFAULT_MODEL = m.DEFAULT_MODEL; })
   .catch(() => { /* not built yet: the fallback stands */ });
