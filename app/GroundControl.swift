@@ -116,10 +116,51 @@ enum NodeFinder {
     /// Probed in order. A GUI process launched from Finder gets a bare
     /// `/usr/bin:/bin:/usr/sbin:/sbin` PATH, so `which node` is useless here,
     /// explicit paths first, the user's login shell only as a fallback.
+    ///
+    /// A Node that runs natively on this Mac wins over one that only runs
+    /// under Rosetta, wherever it sits in the list. A leftover Intel Homebrew
+    /// in /usr/local would otherwise shadow an arm64 Node from nvm, and Rosetta
+    /// is going away. An Intel-only Node is still used when it is all there is.
     static func find() -> String? {
-        for path in candidates() where isRunnable(path) { return path }
-        if let viaShell = viaLoginShell(), isRunnable(viaShell) { return viaShell }
-        return nil
+        var found = candidates().filter(isRunnable)
+        if let native = found.first(where: runsNatively) { return native }
+        if let viaShell = viaLoginShell(), isRunnable(viaShell) { found.append(viaShell) }
+        return found.first(where: runsNatively) ?? found.first
+    }
+
+    /// Whether the Mach-O at `path` (symlinks followed) has a slice for the
+    /// architecture this app is running as. Unreadable files count as native
+    /// so they are never demoted on a guess.
+    static func runsNatively(_ path: String) -> Bool {
+        #if arch(arm64)
+        let want: UInt32 = 0x0100_000C   // CPU_TYPE_ARM64
+        #else
+        let want: UInt32 = 0x0100_0007   // CPU_TYPE_X86_64
+        #endif
+        let real = (path as NSString).resolvingSymlinksInPath
+        guard let fh = FileHandle(forReadingAtPath: real) else { return true }
+        defer { try? fh.close() }
+        let head = [UInt8](fh.readData(ofLength: 4096))
+        guard head.count >= 8 else { return true }
+        func u32(_ at: Int, bigEndian: Bool) -> UInt32? {
+            guard at + 4 <= head.count else { return nil }
+            let b = head[at..<at + 4].map(UInt32.init)
+            return bigEndian ? b[0] << 24 | b[1] << 16 | b[2] << 8 | b[3]
+                             : b[3] << 24 | b[2] << 16 | b[1] << 8 | b[0]
+        }
+        switch u32(0, bigEndian: true)! {
+        case 0xCFFA_EDFE, 0xCEFA_EDFE:          // thin Mach-O, little-endian on disk
+            return u32(4, bigEndian: false) == want
+        case 0xCAFE_BABE, 0xCAFE_BABF:          // universal: big-endian arch table
+            let wide = head[3] == 0xBF          // fat_arch_64 entries are 32 bytes
+            let count = Int(u32(4, bigEndian: true) ?? 0)
+            for i in 0..<min(count, 32) {
+                if u32(8 + i * (wide ? 32 : 20), bigEndian: true) == want { return true }
+            }
+            return false
+        default:
+            return true                          // a script or wrapper, cannot tell
+        }
     }
 
     static func candidates() -> [String] {

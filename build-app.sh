@@ -60,6 +60,7 @@ if ! command -v swiftc >/dev/null 2>&1; then
 
   and then run ./build-app.sh again."
 fi
+command -v lipo     >/dev/null 2>&1 || die "lipo is missing (it ships with the Command Line Tools), cannot build a universal binary."
 command -v sips     >/dev/null 2>&1 || die "sips is missing (it ships with macOS), cannot rasterise the icon."
 command -v iconutil >/dev/null 2>&1 || die "iconutil is missing (it ships with macOS), cannot build the .icns."
 
@@ -86,21 +87,35 @@ mkdir -p "$BUILD" \
 
 # ── 1. compile ───────────────────────────────────────────────────────────────
 
-step "Compiling app/GroundControl.swift"
-swiftc -O \
-  -target "$(uname -m)-apple-macosx12.0" \
-  -framework AppKit -framework WebKit \
-  -o "$BUNDLE/Contents/MacOS/$APP_NAME" \
-  "$SRC/GroundControl.swift" \
-  2> "$BUILD/swiftc.log" || {
-    cat "$BUILD/swiftc.log" >&2
-    die "the Swift compile failed, see the errors above (full log: build/swiftc.log)."
-  }
+# A universal binary, one slice per architecture, joined by lipo. The target is
+# spelled out rather than read from `uname -m`, because a shell running under
+# Rosetta reports x86_64 on Apple silicon, and that once shipped an Intel-only
+# app that macOS will stop running when Rosetta goes away.
+ARCHS=(arm64 x86_64)
+step "Compiling app/GroundControl.swift for ${ARCHS[*]}"
+: > "$BUILD/swiftc.log"
+SLICES=()
+for arch in "${ARCHS[@]}"; do
+  swiftc -O \
+    -target "$arch-apple-macosx12.0" \
+    -framework AppKit -framework WebKit \
+    -o "$BUILD/$APP_NAME-$arch" \
+    "$SRC/GroundControl.swift" \
+    2>> "$BUILD/swiftc.log" || {
+      cat "$BUILD/swiftc.log" >&2
+      die "the Swift compile for $arch failed, see the errors above (full log: build/swiftc.log)."
+    }
+  SLICES+=("$BUILD/$APP_NAME-$arch")
+done
 if [ -s "$BUILD/swiftc.log" ]; then
   note "compiler warnings in build/swiftc.log"
 fi
+lipo -create "${SLICES[@]}" -output "$BUNDLE/Contents/MacOS/$APP_NAME" \
+  || die "lipo could not join the ${ARCHS[*]} slices into one binary."
 chmod +x "$BUNDLE/Contents/MacOS/$APP_NAME"
-note "$(du -h "$BUNDLE/Contents/MacOS/$APP_NAME" | cut -f1) binary"
+lipo "$BUNDLE/Contents/MacOS/$APP_NAME" -verify_arch arm64 \
+  || die "the built binary has no arm64 slice, it would only run under Rosetta."
+note "$(du -h "$BUNDLE/Contents/MacOS/$APP_NAME" | cut -f1) universal binary ($(lipo -archs "$BUNDLE/Contents/MacOS/$APP_NAME"))"
 
 # ── 2. icon ──────────────────────────────────────────────────────────────────
 # app/icon.svg → the full iconset ladder → GroundControl.icns. sips reads SVG directly
