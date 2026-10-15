@@ -6924,7 +6924,7 @@ function runPanel(d) {
   rn.node = p;
   rn.token = state.detailToken;
   rn.projectId = d.id;
-  rn.plan = null; rn.run = null; rn.planError = null; rn.showPlan = false;
+  rn.plan = null; rn.run = null; rn.planError = null; rn.showPlan = false; rn.followed = null;
 
   const id = encodeURIComponent(d.id);
   Promise.all([
@@ -6967,7 +6967,28 @@ function rnPaint() {
 }
 
 function rnStateLabel(run) {
-  return { setup: 'setting up', running: run.urls && run.urls.length ? 'running' : 'starting', done: 'finished', failed: 'failed', stopped: 'stopped' }[run.state] || run.state;
+  const starting = run.urls && run.urls.length && !run.readyUrl;
+  return { setup: 'setting up', running: starting ? 'starting' : 'running', done: 'finished', failed: 'failed', stopped: 'stopped' }[run.state] || run.state;
+}
+
+/* Two per-viewer choices, remembered in this browser only. */
+function rnPref(key, fallback) {
+  try { const v = localStorage.getItem('gc.run.' + key); return v == null ? fallback : v === '1'; } catch { return fallback; }
+}
+function rnSetPref(key, on) {
+  try { localStorage.setItem('gc.run.' + key, on ? '1' : '0'); } catch { /* not remembered */ }
+}
+
+function rnToggle(key, fallback, label, title) {
+  const wrap = h('label', 'rn-toggle');
+  const box = h('input');
+  box.type = 'checkbox';
+  box.id = 'rn-' + key;
+  box.checked = rnPref(key, fallback);
+  box.addEventListener('change', () => rnSetPref(key, box.checked));
+  wrap.title = title;
+  wrap.append(box, h('span', null, label));
+  return wrap;
 }
 
 /* ── before a run: the plan ───────────────────────────────────────────── */
@@ -7025,6 +7046,13 @@ function rnPaintPlan(body) {
       const t = h('div', null);
       t.append(h('span', null, c.text));
       if (c.hint) t.append(h('span', 'rn-hint', c.hint));
+      if (c.install) {
+        const b = h('button', 'btn btn-sm rn-install');
+        b.type = 'button';
+        b.append(icon('i-plus'), h('span', null, c.install.label + ' and run'));
+        b.addEventListener('click', () => rnStart({ install: c.install.tool }));
+        t.append(b);
+      }
       it.append(t);
       ul.append(it);
     }
@@ -7036,8 +7064,14 @@ function rnPaintPlan(body) {
   go.type = 'button';
   go.append(icon('i-play'), h('span', null, 'Run project'));
   go.disabled = !plan.ok || rn.busy;
-  go.addEventListener('click', rnStart);
+  go.addEventListener('click', () => rnStart());
   bar.append(go);
+  bar.append(rnToggle('open', true, 'Open it when it\'s ready',
+    'When the site answers, open it in your browser. Desktop apps open their own window either way.'));
+  if ((cm.status || {}).available) {
+    bar.append(rnToggle('agent', false, 'If it fails, let an agent fix it and re-run',
+      'For failures Run cannot cure by itself: a chat agent edits the project, then Run tries again, up to 3 times. It uses your Claude subscription.'));
+  }
   if (rn.run && rn.showPlan) {
     const back = h('button', 'btn btn-ghost btn-sm', 'Back to the last run');
     back.type = 'button';
@@ -7086,7 +7120,7 @@ function rnPaintRun(body, run) {
   again.type = 'button';
   again.append(icon('i-refresh'), h('span', null, rnActive(run) ? 'Restart' : 'Run again'));
   again.disabled = rn.busy;
-  again.addEventListener('click', rnStart);
+  again.addEventListener('click', () => rnStart());
   acts.append(again);
   if (!rnActive(run)) {
     const change = h('button', 'btn btn-ghost btn-sm', 'Change command');
@@ -7119,17 +7153,43 @@ function rnPaintRun(body, run) {
     body.append(fx);
   }
 
-  if (run.state === 'failed' && run.diagnosis) {
-    const dg = h('div', 'rn-diag');
-    dg.append(h('strong', null, run.diagnosis.title));
-    if (run.diagnosis.detail) dg.append(h('p', null, run.diagnosis.detail));
-    if (run.diagnosis.hint) dg.append(h('p', 'rn-hint', run.diagnosis.hint));
-    const st = cm.status || {};
-    if (st.available) {
+  if (run.opened && run.readyUrl) body.append(h('p', 'rn-ok', 'Opened ' + run.readyUrl + ' in your browser.'));
+
+  const ag = run.agent;
+  if (ag) {
+    const box = h('div', 'rn-agent is-' + ag.state);
+    const msg = {
+      fixing: `An agent is fixing it (attempt ${ag.round} of ${ag.maxRounds})…`,
+      rerunning: `The agent finished; running the project again (attempt ${ag.round} of ${ag.maxRounds})…`,
+      fixed: ag.note || 'An agent fixed it.',
+      'gave-up': ag.note || 'The agent could not fix it.',
+      stopped: 'The agent was stopped.',
+    }[ag.state] || ag.state;
+    box.append(icon(ag.state === 'fixed' ? 'i-check' : ag.state === 'gave-up' ? 'i-alert' : 'i-comms'), h('span', null, msg));
+    body.append(box);
+    rnFollowAgentChat(ag.chatId);
+  }
+
+  if (run.state === 'failed' && run.diagnosis && !(ag && (ag.state === 'fixing' || ag.state === 'rerunning'))) {
+    const d = run.diagnosis;
+    const dg = h('div', 'rn-diag is-' + (d.needs || 'agent'));
+    const who = { click: 'One click fixes this', you: 'This needs you', agent: 'Run could not fix this by itself' }[d.needs || 'agent'];
+    dg.append(h('span', 'rn-who', who), h('strong', null, d.title));
+    if (d.detail) dg.append(h('p', null, d.detail));
+    if (d.hint) dg.append(h('p', 'rn-hint', d.hint));
+    if (d.needs === 'you' && d.why) dg.append(h('p', 'rn-hint', 'Why it is yours: ' + d.why));
+    if (d.install) {
+      const b = h('button', 'btn btn-sm');
+      b.type = 'button';
+      b.append(icon('i-plus'), h('span', null, d.install.label + ' and run again'));
+      b.addEventListener('click', () => rnStart({ install: d.install.tool }));
+      dg.append(b);
+    } else if ((d.needs || 'agent') === 'agent' && (cm.status || {}).available) {
       const ask = h('button', 'btn btn-sm');
       ask.type = 'button';
-      ask.append(icon('i-comms'), h('span', null, 'Ask an agent to fix it'));
-      ask.addEventListener('click', () => rnAskAgent(ask));
+      ask.append(icon('i-comms'), h('span', null, 'Let an agent fix it and re-run'));
+      ask.title = 'A chat agent edits the project to fix this, then Run starts it again by itself, up to 3 attempts.';
+      ask.addEventListener('click', () => rnAgent(ask));
       dg.append(ask);
     }
     body.append(dg);
@@ -7140,6 +7200,24 @@ function rnPaintRun(body, run) {
   for (const e of (run.log || []).slice(-RN_LOG_DOM_MAX)) log.append(rnLine(e, run.multi));
   if (!(run.log || []).length) log.append(h('div', 'rn-line is-sys', 'Waiting for output…'));
   body.append(log);
+
+  // Programs that ask questions (Python's input()) get a line to answer in.
+  if (run.canType) {
+    const form = h('form', 'rn-input');
+    const field = h('input', 'mono');
+    field.type = 'text';
+    field.id = 'rn-input-' + run.id;
+    field.placeholder = 'Type input for the program and press Enter';
+    field.setAttribute('aria-label', 'Input for the running program');
+    form.append(field);
+    form.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const text = field.value;
+      field.value = '';
+      cmPost('/api/run/' + encodeURIComponent(rn.projectId) + '/input', { text }).catch(() => {});
+    });
+    body.append(form);
+  }
 }
 
 function rnLine(e, multi) {
@@ -7151,12 +7229,17 @@ function rnLine(e, multi) {
 
 /* ── actions ──────────────────────────────────────────────────────────── */
 
-function rnStart() {
+function rnStart(opts) {
   if (rn.busy) return;
   rn.busy = true;
   const projectId = rn.projectId;
   rn.showPlan = false;
-  cmPost('/api/run/' + encodeURIComponent(projectId) + '/start', { choices: rn.choices.get(projectId) || {} })
+  cmPost('/api/run/' + encodeURIComponent(projectId) + '/start', {
+    choices: rn.choices.get(projectId) || {},
+    open: rnPref('open', true),
+    agent: rnPref('agent', false) && Boolean((cm.status || {}).available),
+    install: opts && opts.install ? opts.install : undefined,
+  })
     .then((r) => {
       rn.busy = false;
       if (rnStale() || rn.projectId !== projectId) return;
@@ -7187,36 +7270,20 @@ function rnRefreshPlan() {
     .catch(() => {});
 }
 
-/** Hand the failure to a Comms chat in this project, with the log attached. */
-function rnAskAgent(btn) {
-  const run = rn.run;
-  if (!run || !cm.node || cm.projectId !== rn.projectId) return;
+/** Hand the failure to the agent loop: it fixes, then Run re-runs by itself. */
+function rnAgent(btn) {
   btn.disabled = true;
-  getJSON('/api/run/' + encodeURIComponent(rn.projectId) + '/tail')
-    .then((r) => {
-      const steps = (run.steps || []).map((s) => `- ${s.label}: \`${s.command}\` (${s.state})`).join('\n');
-      const prompt = [
-        'I pressed "Run" on this project in Ground Control and it failed. Please find out why and fix it so it runs.',
-        '',
-        'What Ground Control ran:',
-        steps,
-        '',
-        `Its diagnosis: ${run.diagnosis ? run.diagnosis.title + '. ' + (run.diagnosis.detail || '') : 'none'}`,
-        (run.fixes || []).length ? 'It already tried: ' + run.fixes.map((f) => f.action).join(' ') : '',
-        '',
-        'The end of the output:',
-        '```',
-        r.tail || '(no output)',
-        '```',
-        '',
-        'Change what needs changing in the project, then tell me in a sentence or two what was wrong. I will press Run again myself.',
-      ].filter((l) => l !== null).join('\n');
-      return cmStart({}).then((chat) => {
-        cmSend(chat.id, prompt);
-        if (cm.node) cm.node.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-    })
-    .catch(() => { btn.disabled = false; });
+  cmPost('/api/run/' + encodeURIComponent(rn.projectId) + '/agent')
+    .then((r) => { if (!rnStale() && r.run) { rn.run = Object.assign({}, rn.run, r.run, { log: rn.run.log }); rnPaint(); rnOpenStream(true); } })
+    .catch((err) => { btn.disabled = false; if (!rnStale()) rn.node._body.prepend(h('div', 'rn-diag', err.message || 'the agent could not start')); });
+}
+
+/** Show the fixing agent's chat in the chat panel, so its work is visible. */
+function rnFollowAgentChat(chatId) {
+  if (!chatId || !cm.node || cm.projectId !== rn.projectId || rn.followed === chatId) return;
+  rn.followed = chatId;
+  cm.active.set(rn.projectId, chatId);
+  cmLoadList(rn.projectId).then(() => cmLoadChat(chatId)).catch(() => {});
 }
 
 /* ── the live stream ──────────────────────────────────────────────────── */
@@ -7246,7 +7313,8 @@ function rnOpenStream(fresh) {
     const log = rn.run && rn.run.id === data.run.id ? rn.run.log : [];
     rn.run = Object.assign({}, data.run, { log });
     rnPaint();
-    if (!rnActive(rn.run)) rnCloseStream();
+    const ag = rn.run.agent;
+    if (!rnActive(rn.run) && !(ag && (ag.state === 'fixing' || ag.state === 'rerunning'))) rnCloseStream();
   });
   /* Log lines arrive several times a second while installing: append them to
    * the open log rather than repainting the panel. */

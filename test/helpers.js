@@ -112,6 +112,8 @@ export async function startServer(root, opts = {}) {
   if (root) args.push('--root', root);
   const child = spawn(process.execPath, args, {
     stdio: ['ignore', 'pipe', 'pipe'], detached: true,
+    // A test run must never open a browser or source someone's shell profile.
+    env: { ...process.env, GROUND_CONTROL_NO_BROWSER: '1', GROUND_CONTROL_NO_LOGIN_SHELL: '1' },
   });
   const base = `http://127.0.0.1:${port}`;
   const deadline = Date.now() + 15_000;

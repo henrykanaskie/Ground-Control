@@ -2201,3 +2201,30 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 .rn-line.is-err{color:var(--text-3)}
 .rn-line.is-sys{color:var(--accent-soft)}
 .rn-src{display:inline-block;min-width:8ch;margin-right:8px;color:var(--text-3)}
+
+/* Run: choices, outcomes, and who has to act */
+.rn-toggle{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-2);cursor:pointer}
+.rn-toggle input{accent-color:var(--active)}
+.rn-install{margin-top:6px}
+.rn-ok{margin:0 0 10px;font-size:12.5px;color:var(--done)}
+.rn-agent{
+  display:flex;gap:8px;align-items:flex-start;margin:0 0 10px;padding:10px 12px;
+  border:1px solid var(--line-2);border-radius:var(--radius-sm);font-size:12.5px;line-height:1.5;color:var(--text);
+}
+.rn-agent .icon{flex:none;width:14px;height:14px;margin-top:2px;color:var(--accent)}
+.rn-agent.is-fixing .icon,.rn-agent.is-rerunning .icon{animation:rn-pulse 1.4s var(--ease) infinite}
+.rn-agent.is-fixed{border-color:var(--done-line);background:var(--done-tint)}
+.rn-agent.is-fixed .icon{color:var(--done)}
+.rn-agent.is-gave-up .icon{color:var(--danger)}
+.rn-who{display:block;margin-bottom:4px;font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3)}
+.rn-diag.is-click{border-color:rgba(var(--accent-rgb),.45);background:rgba(var(--accent-rgb),.07)}
+.rn-diag.is-you{border-color:rgba(var(--warn-rgb),.5);background:rgba(var(--warn-rgb),.08)}
+.rn-diag.is-you .rn-who{color:var(--warn)}
+.rn-input{margin-top:8px}
+.rn-input input{
+  width:100%;height:30px;padding:0 10px;font-size:12px;color:var(--text);
+  background:var(--bg);border:1px solid var(--line-2);border-radius:var(--radius-xs);
+}
+.rn-input input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.rn-line.is-in{color:var(--accent-soft)}
+@media (prefers-reduced-motion:reduce){.rn-agent .icon{animation:none!important}}

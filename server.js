@@ -2535,6 +2535,7 @@ function completePayload(project) {
  * ================================================================== */
 
 import * as runnerlib from './lib/runner.js';
+import { createAutofix } from './lib/autofix.js';
 
 const RUN_PING_MS = 25000;
 const RUN_LOCAL_ONLY =
@@ -2552,6 +2553,27 @@ try {
 for (const sig of ['SIGINT', 'SIGTERM', 'exit']) {
   process.on(sig, () => { try { runnerlib.stopAll(); } catch { /* ignore */ } });
 }
+
+/* Opening what a run serves: the system's own opener, an argv with a URL that
+ * runner.js has already confined to localhost. GROUND_CONTROL_NO_BROWSER
+ * turns it off, which the test helpers set. */
+if (!process.env.GROUND_CONTROL_NO_BROWSER) {
+  runnerlib.setOpener((url) => {
+    const cmd = process.platform === 'darwin' ? ['open', url]
+      : process.platform === 'win32' ? ['cmd', '/c', 'start', '', url] : ['xdg-open', url];
+    execFile(cmd[0], cmd.slice(1), { timeout: 10000 }, () => { /* best effort */ });
+  });
+}
+
+const AUTOFIX = createAutofix({ comms: commslib, runner: runnerlib, findProject });
+
+/* A run that opted in hands its failure to the agent loop by itself. */
+runnerlib.setFailureHook((run) => {
+  let claude = { available: false };
+  try { claude = generate.claudeAvailable(); } catch { /* unavailable */ }
+  if (!claude.available) return;
+  AUTOFIX.begin(run.projectId, run).catch((err) => console.error('[run] autofix:', (err && err.message) || err));
+});
 
 async function handleRun(req, res, pathname) {
   if (!isLocalRequest(req)) return sendError(res, 403, RUN_LOCAL_ONLY);
@@ -2579,8 +2601,11 @@ async function handleRun(req, res, pathname) {
     try { body = await readJsonBody(req); }
     catch (err) { return sendError(res, err.status || 400, err.message || 'bad request'); }
     const choices = body && typeof body.choices === 'object' && body.choices ? body.choices : {};
+    const install = typeof body.install === 'string' && /^[\w.-]{1,40}$/.test(body.install) ? body.install : null;
     try {
-      const run = await runnerlib.start(project, { choices });
+      AUTOFIX.stop(id);
+      runnerlib.setAgent(id, null);
+      const run = await runnerlib.start(project, { choices, open: body.open === true, install, autoAgent: body.agent === true });
       return sendJSON(res, 202, { run: runnerlib.toJSON(run, { withLog: true }) });
     } catch (err) {
       return sendError(res, err.status || 500, err.message || 'the project could not be started');
@@ -2588,7 +2613,31 @@ async function handleRun(req, res, pathname) {
   }
   if (action === 'stop') {
     if (req.method !== 'POST') return sendError(res, 405, 'method not allowed');
+    AUTOFIX.stop(id);
     return sendJSON(res, 200, { run: runnerlib.toJSON(runnerlib.stop(id, 'stopped from the dashboard')) });
+  }
+  if (action === 'input') {
+    if (req.method !== 'POST') return sendError(res, 405, 'method not allowed');
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (err) { return sendError(res, err.status || 400, err.message || 'bad request'); }
+    if (typeof body.text !== 'string') return sendError(res, 400, 'text is required');
+    if (!runnerlib.sendInput(id, body.text)) return sendError(res, 409, 'nothing is running that can take typed input');
+    return sendJSON(res, 200, { ok: true });
+  }
+  if (action === 'agent') {
+    if (req.method !== 'POST') return sendError(res, 405, 'method not allowed');
+    const run = runnerlib.get(id);
+    if (!run || run.state !== 'failed') return sendError(res, 409, 'there is no failed run to fix');
+    let claude = { available: false };
+    try { claude = generate.claudeAvailable(); } catch { /* unavailable */ }
+    if (!claude.available) return sendError(res, 503, 'The claude CLI is not available on this machine, so there is no agent to hand this to.');
+    try {
+      await AUTOFIX.begin(id, run);
+      return sendJSON(res, 202, { run: runnerlib.toJSON(runnerlib.get(id)) });
+    } catch (err) {
+      return sendError(res, err.status || 500, err.message || 'the agent could not start');
+    }
   }
   if (action === 'tail') {
     if (req.method !== 'GET') return sendError(res, 405, 'method not allowed');
