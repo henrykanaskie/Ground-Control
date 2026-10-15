@@ -1813,11 +1813,15 @@ function prefersReducedMotion() {
 
 /* Fallback only: /api/forge/status ships the real list from lib/models.js and
  * wins whenever it is there. Keep the two in step when a model is added. */
-const FORGE_MODELS = ['claude-opus-5', 'claude-fable-5', 'claude-sonnet-5', 'claude-haiku-4-5'];
+const FORGE_MODELS = ['claude-opus-5-5', 'claude-fable-5-1', 'claude-sonnet-5-5', 'claude-haiku-5-5'];
 
 /* A bare family name (`opus`, `sonnet`) is resolved by the CLI to the newest
  * model in that family at the moment the run starts, so it never goes stale. */
 const MODEL_NOTE = {
+  'claude-opus-5-5': 'most thorough',
+  'claude-fable-5-1': 'most capable, slowest',
+  'claude-sonnet-5-5': 'faster',
+  'claude-haiku-5-5': 'quickest',
   'claude-opus-5': 'most thorough',
   'claude-opus-4-8': 'most thorough',
   'claude-fable-5': 'most capable, slowest',
