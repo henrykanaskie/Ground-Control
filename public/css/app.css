@@ -2107,3 +2107,97 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 /* A finished artifact that is all prose says so, quietly, where its size
    and duration are reported (CONTRACT-FORGE.md §4.6). */
 .forge-tag.is-thin{border-color:rgba(var(--accent-rgb),.45);color:var(--warn)}
+
+/* ============================================================================
+ * RUN: one button that gets a project running
+ *
+ * The plan reads as a numbered list of what is about to happen, so nothing
+ * runs that you have not seen. During a run the log is the panel: fixed
+ * height, scrolling, following the tail unless you scroll up to read.
+ * ========================================================================= */
+
+.panel.rn{margin-bottom:26px}
+.panel.rn .panel-h .icon{color:var(--active)}
+.panel.rn[data-state="failed"] .panel-h .icon{color:var(--danger)}
+.rn-intro{margin:0 0 12px;font-size:12.5px;line-height:1.6;color:var(--text-2)}
+
+.rn-svc{margin-bottom:12px}
+.rn-svc-h{display:flex;align-items:baseline;gap:10px;margin-bottom:6px;font-size:13px}
+.rn-stack{font-size:11.5px;color:var(--text-3)}
+.rn-steps{margin:0;padding:0 0 0 20px;display:flex;flex-direction:column;gap:6px}
+.rn-step{font-size:12.5px;color:var(--text-2);line-height:1.5}
+.rn-step::marker{color:var(--text-3);font-family:var(--mono);font-size:11px}
+.rn-label{margin-right:8px;color:var(--text)}
+.rn-cmd{
+  display:inline-block;max-width:100%;padding:1px 7px;border:1px solid var(--line);
+  border-radius:var(--radius-xs);background:var(--bg-2);font-size:11.5px;color:var(--text);
+  overflow-wrap:anywhere;
+}
+.rn-why{display:block;font-size:11.5px;color:var(--text-3)}
+.rn-select{
+  max-width:100%;height:26px;padding:0 6px;font:inherit;font-family:var(--mono);font-size:11.5px;
+  color:var(--text);background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--radius-xs);
+}
+
+.rn-checks{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.rn-check{display:flex;gap:8px;font-size:12.5px;line-height:1.5;color:var(--text-2)}
+.rn-check .icon{flex:none;width:14px;height:14px;margin-top:2px}
+.rn-check.is-ok .icon{color:var(--active)}
+.rn-check.is-warn .icon{color:var(--warn)}
+.rn-check.is-error{color:var(--text)}
+.rn-check.is-error .icon{color:var(--danger)}
+.rn-hint{display:block;font-size:11.5px;color:var(--text-3)}
+
+.rn-bar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:14px}
+.rn-go{border-color:rgba(74,222,128,.45);color:var(--text)}
+.rn-go .icon{color:var(--active)}
+.rn-go:hover{border-color:var(--active)}
+.rn-note{font-size:11.5px;color:var(--text-3)}
+
+.rn-top{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.rn-badge{
+  display:inline-flex;align-items:center;gap:7px;height:26px;padding:0 10px;
+  border:1px solid var(--line-2);border-radius:99px;font-size:12px;color:var(--text);
+}
+.rn-dot{width:8px;height:8px;border-radius:50%;background:var(--text-3)}
+.rn-badge.is-setup .rn-dot,.rn-badge.is-running .rn-dot{background:var(--active);animation:rn-pulse 1.4s var(--ease) infinite}
+.rn-badge.is-done .rn-dot{background:var(--done)}
+.rn-badge.is-failed{border-color:var(--danger-line)}
+.rn-badge.is-failed .rn-dot{background:var(--danger)}
+@keyframes rn-pulse{50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.rn-badge .rn-dot{animation:none!important}}
+.rn-url{border-color:rgba(var(--accent-rgb),.45);color:var(--accent-soft)}
+.rn-url .icon{color:var(--accent)}
+.rn-acts{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto}
+.rn-stop .icon{color:var(--danger)}
+
+.rn-progress{list-style:none;margin:0 0 10px;padding:0;display:flex;flex-direction:column;gap:5px}
+.rn-pstep{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:12.5px;color:var(--text-2)}
+.rn-pdot{flex:none;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--text-3)}
+.rn-pstep.is-running .rn-pdot{border-color:var(--active);background:var(--active);animation:rn-pulse 1.4s var(--ease) infinite}
+.rn-pstep.is-done .rn-pdot{border-color:var(--done);background:var(--done)}
+.rn-pstep.is-failed .rn-pdot{border-color:var(--danger);background:var(--danger)}
+.rn-pstep.is-skipped,.rn-pstep.is-stopped{opacity:.6}
+.rn-plabel{color:var(--text)}
+.rn-dur{font-family:var(--mono);font-size:11px;color:var(--text-3)}
+
+.rn-fixes{list-style:none;margin:0 0 10px;padding:0;display:flex;flex-direction:column;gap:4px}
+.rn-fixes li{display:flex;gap:8px;font-size:12px;line-height:1.5;color:var(--text-2)}
+.rn-fixes .icon{flex:none;width:13px;height:13px;margin-top:2px;color:var(--warn)}
+
+.rn-diag{
+  margin:0 0 10px;padding:12px 14px;border:1px solid var(--danger-line);border-radius:var(--radius-sm);
+  background:var(--danger-tint);font-size:12.5px;line-height:1.55;color:var(--text);
+}
+.rn-diag p{margin:4px 0 0;color:var(--text-2)}
+.rn-diag .btn{margin-top:10px}
+
+.rn-log{
+  max-height:min(46vh,380px);overflow:auto;overscroll-behavior:contain;
+  padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);
+  background:var(--bg);font-size:11.5px;line-height:1.55;
+}
+.rn-line{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text-2)}
+.rn-line.is-err{color:var(--text-3)}
+.rn-line.is-sys{color:var(--accent-soft)}
+.rn-src{display:inline-block;min-width:8ch;margin-right:8px;color:var(--text-3)}

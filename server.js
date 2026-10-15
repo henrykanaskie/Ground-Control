@@ -583,6 +583,10 @@ async function route(req, res) {
   // machine before any of them.
   if (pathname.startsWith('/api/comms/')) return handleComms(req, res, pathname);
 
+  // Run (README "Run: one button"). Starting and stopping are POSTs, every
+  // route is loopback-only: a run executes the project's own commands.
+  if (pathname.startsWith('/api/run/')) return handleRun(req, res, pathname);
+
   // Reclaim (CONTRACT-RECLAIM.md §5). Dispatched before the read-only method
   // guard because the trash route is a POST; the handler checks methods itself.
   if (pathname === '/api/reclaim' || pathname.startsWith('/api/reclaim/')) {
@@ -2503,4 +2507,122 @@ function completePayload(project) {
     ongoing: Boolean(project.ongoing),
     ongoingISO: project.ongoingISO || null,
   };
+}
+
+
+/* ================================================================== *
+ * GROUND_CONTROL RUN: one button that gets a project running
+ *
+ * Appended at the end. `route()` gained one dispatch line for `/api/run/`.
+ *
+ * Safety posture, the same as Comms and for the same reason: a run executes
+ * commands on this machine. So every route is loopback-only, the folder comes
+ * from the scan (`findProject`), never from the request, and the commands
+ * come from lib/runner.js reading that folder's own files. A caller chooses
+ * *which* detected start command by index and can never supply one.
+ * ================================================================== */
+
+import * as runnerlib from './lib/runner.js';
+
+const RUN_PING_MS = 25000;
+const RUN_LOCAL_ONLY =
+  'Projects can only be run from the machine Ground Control is running on: running one executes its commands.';
+
+try {
+  // Beside sources.json, so `--config` isolates it exactly like Comms' store.
+  runnerlib.setStoreFile(runnerlib.storePathFor(SOURCES.file));
+  const reaped = runnerlib.reapOrphans();
+  if (reaped) console.log(`[run] stopped ${reaped} process(es) left running by the last server`);
+} catch (err) {
+  console.error('[run] orphan check failed:', (err && err.message) || err);
+}
+
+for (const sig of ['SIGINT', 'SIGTERM', 'exit']) {
+  process.on(sig, () => { try { runnerlib.stopAll(); } catch { /* ignore */ } });
+}
+
+async function handleRun(req, res, pathname) {
+  if (!isLocalRequest(req)) return sendError(res, 403, RUN_LOCAL_ONLY);
+
+  const parts = pathname.slice('/api/run/'.length).split('/');
+  const id = safeDecode(parts[0] || '');
+  if (!id) return sendError(res, 400, 'bad request');
+  const action = parts[1] || '';
+
+  const project = await findProject(id);
+  if (!project) return sendError(res, 404, 'unknown project');
+
+  if (!action) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return sendError(res, 405, 'method not allowed');
+    return sendJSON(res, 200, { run: runnerlib.toJSON(runnerlib.get(id), { withLog: true }) });
+  }
+  if (action === 'plan') {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return sendError(res, 405, 'method not allowed');
+    const plan = await runnerlib.preflight(runnerlib.detectPlan(project.path));
+    return sendJSON(res, 200, runnerlib.planJSON(plan));
+  }
+  if (action === 'start') {
+    if (req.method !== 'POST') return sendError(res, 405, 'method not allowed');
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (err) { return sendError(res, err.status || 400, err.message || 'bad request'); }
+    const choices = body && typeof body.choices === 'object' && body.choices ? body.choices : {};
+    try {
+      const run = await runnerlib.start(project, { choices });
+      return sendJSON(res, 202, { run: runnerlib.toJSON(run, { withLog: true }) });
+    } catch (err) {
+      return sendError(res, err.status || 500, err.message || 'the project could not be started');
+    }
+  }
+  if (action === 'stop') {
+    if (req.method !== 'POST') return sendError(res, 405, 'method not allowed');
+    return sendJSON(res, 200, { run: runnerlib.toJSON(runnerlib.stop(id, 'stopped from the dashboard')) });
+  }
+  if (action === 'tail') {
+    if (req.method !== 'GET') return sendError(res, 405, 'method not allowed');
+    return sendJSON(res, 200, { tail: runnerlib.logTail(runnerlib.get(id), 120) });
+  }
+  if (action === 'stream') {
+    if (req.method !== 'GET') return sendError(res, 405, 'method not allowed');
+    return runStream(req, res, id);
+  }
+  return sendError(res, 404, 'unknown endpoint');
+}
+
+/* `hello` carries the whole run with its log, so a reconnect is never behind;
+ * then `log` carries new lines in batches and `state` the run without its log. */
+function runStream(req, res, projectId) {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+  let closed = false;
+  let unsubscribe = null;
+  let pingTimer = null;
+  const send = (event, data) => {
+    if (closed) return;
+    try { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch { cleanup(); }
+  };
+  const cleanup = () => {
+    if (closed) return;
+    closed = true;
+    if (pingTimer) clearInterval(pingTimer);
+    if (unsubscribe) { try { unsubscribe(); } catch { /* ignore */ } }
+    try { res.end(); } catch { /* ignore */ }
+  };
+  req.on('close', cleanup);
+  res.on('close', cleanup);
+  res.on('error', cleanup);
+
+  send('hello', { run: runnerlib.toJSON(runnerlib.get(projectId), { withLog: true }) });
+  pingTimer = setInterval(() => send('ping', {}), RUN_PING_MS);
+  if (typeof pingTimer.unref === 'function') pingTimer.unref();
+  unsubscribe = runnerlib.subscribe(projectId, (event, run, payload) => {
+    if (event === 'log') return send('log', { runId: run.id, lines: payload });
+    if (event === 'state') return send('state', { run: payload });
+  });
 }

@@ -1005,6 +1005,9 @@ function paintDetail(box, d) {
   head.append(stats);
   box.append(head);
 
+  /* ── Run: one button that gets the project going ── */
+  box.append(runPanel(d));
+
   /* ── Forge (CONTRACT-FORGE.md §9) ── */
   box.append(forgePanel(d));
 
@@ -3120,6 +3123,7 @@ function onLocationChange() {
 
   if (next.view !== 'reader') teardownReader();
   if (next.view !== 'detail') cmTeardown();            // Comms §5
+  if (next.view !== 'detail') rnTeardown();            // Run
 
   el.viewGrid.hidden = next.view !== 'grid';
   el.viewDetail.hidden = next.view !== 'detail';
@@ -6808,4 +6812,409 @@ function cmContinueButton(sessionId) {
       });
   });
   return b;
+}
+
+
+/* ============================================================================
+ * GROUND_CONTROL RUN: one button that gets a project running
+ *
+ * Appended at the end. Two edits above this line: the detail view mounts
+ * `runPanel()` above Forge, and `onLocationChange` tears its stream down.
+ *
+ * Before a run, the panel shows the plan: every command it is about to run,
+ * why, and what is wrong already (a missing tool, a busy port). Nothing runs
+ * until the button is pressed. During a run it shows each step, the live
+ * output, the address the app came up on, and anything it fixed by itself.
+ * After a failure it says what it thinks went wrong, and offers to hand the
+ * log to a chat agent in this project.
+ * ========================================================================= */
+
+const RN_BACKOFF = [1000, 2000, 5000, 15000];
+const RN_LOG_DOM_MAX = 3000;
+
+const rn = {
+  node: null, token: 0, projectId: null,
+  plan: null, run: null, planError: null,
+  choices: new Map(),     // projectId -> { serviceId: startIndex }
+  showPlan: false,        // a finished run, but the person wants to change the command
+  es: null, esAttempt: 0, esTimer: 0,
+  busy: false,
+};
+
+function rnStale() { return !rn.node || rn.token !== state.detailToken || !rn.node.isConnected; }
+
+function rnActive(run) { return run && (run.state === 'setup' || run.state === 'running'); }
+
+function runPanel(d) {
+  const p = panel('Run this project', 'i-play', '');
+  p.classList.add('rn');
+  p._body.append(h('div', 'panel-note', 'Working out how to run it…'));
+  rnCloseStream();
+  rn.node = p;
+  rn.token = state.detailToken;
+  rn.projectId = d.id;
+  rn.plan = null; rn.run = null; rn.planError = null; rn.showPlan = false;
+
+  const id = encodeURIComponent(d.id);
+  Promise.all([
+    getJSON('/api/run/' + id + '/plan').catch((err) => { rn.planError = err.message || 'unavailable'; return null; }),
+    getJSON('/api/run/' + id).catch(() => ({ run: null })),
+  ]).then(([plan, cur]) => {
+    if (rnStale()) return;
+    rn.plan = plan;
+    rn.run = cur && cur.run;
+    rnPaint();
+    if (rnActive(rn.run)) rnOpenStream();
+  });
+  return p;
+}
+
+function rnPaint() {
+  if (rnStale()) return;
+  const body = rn.node._body;
+  const keepScroll = body.querySelector('.rn-log');
+  const wasAtBottom = !keepScroll || keepScroll.scrollHeight - keepScroll.scrollTop - keepScroll.clientHeight < 40;
+  const prevTop = keepScroll ? keepScroll.scrollTop : 0;
+  clear(body);
+
+  const n = rn.node.querySelector('.panel-h .n');
+  const run = rn.run;
+  if (n) n.textContent = run ? rnStateLabel(run) : '';
+  rn.node.dataset.state = run ? run.state : 'idle';
+
+  if (rn.planError && !run) {
+    body.append(h('div', 'panel-note', rn.planError.includes('machine')
+      ? rn.planError
+      : 'Could not work out how to run this project: ' + rn.planError));
+    return;
+  }
+  if (!run || rn.showPlan) return rnPaintPlan(body);
+  rnPaintRun(body, run);
+
+  const log = body.querySelector('.rn-log');
+  if (log) log.scrollTop = wasAtBottom ? log.scrollHeight : prevTop;
+}
+
+function rnStateLabel(run) {
+  return { setup: 'setting up', running: run.urls && run.urls.length ? 'running' : 'starting', done: 'finished', failed: 'failed', stopped: 'stopped' }[run.state] || run.state;
+}
+
+/* ── before a run: the plan ───────────────────────────────────────────── */
+
+function rnPaintPlan(body) {
+  const plan = rn.plan;
+  if (!plan) { body.append(h('div', 'panel-note', 'Working out how to run it…')); return; }
+  const choices = rn.choices.get(rn.projectId) || {};
+
+  if (plan.services.length) {
+    const intro = h('p', 'rn-intro', plan.services.length > 1
+      ? `Nothing at the top level starts this project, so it runs ${plan.services.length} parts side by side. Pressing Run does all of this for you:`
+      : 'Pressing Run does all of this for you, in order:');
+    body.append(intro);
+  }
+
+  for (const svc of plan.services) {
+    const box = h('div', 'rn-svc');
+    const head = h('div', 'rn-svc-h');
+    head.append(h('strong', null, svc.dir ? svc.dir + '/' : svc.name), h('span', 'rn-stack', svc.stack));
+    box.append(head);
+    const ol = h('ol', 'rn-steps');
+    for (const st of svc.setup) ol.append(rnPlanStep(st.label, st.command, st.why));
+
+    const idx = Number.isInteger(choices[svc.id]) ? choices[svc.id] : svc.startIndex;
+    const start = svc.starts[idx] || svc.starts[0];
+    const li = rnPlanStep('Start it', start.command, start.why);
+    if (svc.starts.length > 1) {
+      const sel = h('select', 'rn-select');
+      sel.setAttribute('aria-label', 'Start command');
+      svc.starts.forEach((s, i) => {
+        const o = h('option', null, s.command);
+        o.value = String(i);
+        if (i === idx) o.selected = true;
+        sel.append(o);
+      });
+      sel.addEventListener('change', () => {
+        const c = Object.assign({}, rn.choices.get(rn.projectId) || {});
+        c[svc.id] = Number(sel.value);
+        rn.choices.set(rn.projectId, c);
+        rnPaint();
+      });
+      li.querySelector('.rn-cmd').replaceWith(sel);
+    }
+    ol.append(li);
+    box.append(ol);
+    body.append(box);
+  }
+
+  if (plan.checks && plan.checks.length) {
+    const ul = h('ul', 'rn-checks');
+    for (const c of plan.checks) {
+      const it = h('li', 'rn-check is-' + c.level);
+      it.append(icon(c.level === 'error' ? 'i-alert' : c.level === 'warn' ? 'i-flag' : 'i-check'));
+      const t = h('div', null);
+      t.append(h('span', null, c.text));
+      if (c.hint) t.append(h('span', 'rn-hint', c.hint));
+      it.append(t);
+      ul.append(it);
+    }
+    body.append(ul);
+  }
+
+  const bar = h('div', 'rn-bar');
+  const go = h('button', 'btn rn-go');
+  go.type = 'button';
+  go.append(icon('i-play'), h('span', null, 'Run project'));
+  go.disabled = !plan.ok || rn.busy;
+  go.addEventListener('click', rnStart);
+  bar.append(go);
+  if (rn.run && rn.showPlan) {
+    const back = h('button', 'btn btn-ghost btn-sm', 'Back to the last run');
+    back.type = 'button';
+    back.addEventListener('click', () => { rn.showPlan = false; rnPaint(); });
+    bar.append(back);
+  }
+  bar.append(h('span', 'rn-note', plan.ok
+    ? 'Runs in the project folder with your normal tools. Only this machine can start a run.'
+    : 'Fix what is marked above, then press Run.'));
+  body.append(bar);
+}
+
+function rnPlanStep(label, command, why) {
+  const li = h('li', 'rn-step');
+  li.append(h('span', 'rn-label', label), h('code', 'rn-cmd mono', command));
+  if (why) li.append(h('span', 'rn-why', why));
+  return li;
+}
+
+/* ── during and after a run ───────────────────────────────────────────── */
+
+function rnPaintRun(body, run) {
+  const top = h('div', 'rn-top');
+  const badge = h('span', 'rn-badge is-' + run.state);
+  badge.append(h('span', 'rn-dot'), h('span', null, rnStateLabel(run)));
+  top.append(badge);
+
+  for (const u of run.urls || []) {
+    const a = h('a', 'btn btn-sm rn-url');
+    a.href = u;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.append(icon('i-external'), h('span', null, u.replace(/^https?:\/\//, '').replace(/\/$/, '')));
+    top.append(a);
+  }
+
+  const acts = h('span', 'rn-acts');
+  if (rnActive(run)) {
+    const stop = h('button', 'btn btn-sm rn-stop');
+    stop.type = 'button';
+    stop.append(icon('i-stop'), h('span', null, 'Stop'));
+    stop.addEventListener('click', rnStop);
+    acts.append(stop);
+  }
+  const again = h('button', 'btn btn-sm');
+  again.type = 'button';
+  again.append(icon('i-refresh'), h('span', null, rnActive(run) ? 'Restart' : 'Run again'));
+  again.disabled = rn.busy;
+  again.addEventListener('click', rnStart);
+  acts.append(again);
+  if (!rnActive(run)) {
+    const change = h('button', 'btn btn-ghost btn-sm', 'Change command');
+    change.type = 'button';
+    change.addEventListener('click', () => { rn.showPlan = true; rnRefreshPlan(); });
+    acts.append(change);
+  }
+  top.append(acts);
+  body.append(top);
+
+  const steps = h('ol', 'rn-progress');
+  for (const s of run.steps || []) {
+    const li = h('li', 'rn-pstep is-' + s.state);
+    li.append(h('span', 'rn-pdot'));
+    // A start step's label is its command; saying it twice is noise.
+    const txt = h('span', 'rn-plabel', (run.multi ? s.service + ': ' : '') + (s.kind === 'start' ? 'Start' : s.label));
+    li.append(txt, h('code', 'rn-cmd mono', s.command));
+    if (s.durationMs != null && s.state !== 'running') li.append(h('span', 'rn-dur', (s.durationMs / 1000).toFixed(1) + 's'));
+    steps.append(li);
+  }
+  body.append(steps);
+
+  if (run.fixes && run.fixes.length) {
+    const fx = h('ul', 'rn-fixes');
+    for (const f of run.fixes) {
+      const li = h('li', null);
+      li.append(icon('i-hammer'), h('span', null, 'Fixed automatically: ' + f.title + '. ' + f.action));
+      fx.append(li);
+    }
+    body.append(fx);
+  }
+
+  if (run.state === 'failed' && run.diagnosis) {
+    const dg = h('div', 'rn-diag');
+    dg.append(h('strong', null, run.diagnosis.title));
+    if (run.diagnosis.detail) dg.append(h('p', null, run.diagnosis.detail));
+    if (run.diagnosis.hint) dg.append(h('p', 'rn-hint', run.diagnosis.hint));
+    const st = cm.status || {};
+    if (st.available) {
+      const ask = h('button', 'btn btn-sm');
+      ask.type = 'button';
+      ask.append(icon('i-comms'), h('span', null, 'Ask an agent to fix it'));
+      ask.addEventListener('click', () => rnAskAgent(ask));
+      dg.append(ask);
+    }
+    body.append(dg);
+  }
+
+  const log = h('div', 'rn-log mono');
+  log.setAttribute('role', 'log');
+  for (const e of (run.log || []).slice(-RN_LOG_DOM_MAX)) log.append(rnLine(e, run.multi));
+  if (!(run.log || []).length) log.append(h('div', 'rn-line is-sys', 'Waiting for output…'));
+  body.append(log);
+}
+
+function rnLine(e, multi) {
+  const d = h('div', 'rn-line is-' + e.t);
+  if (multi && e.s) d.append(h('span', 'rn-src', e.s));
+  d.append(document.createTextNode(e.l));
+  return d;
+}
+
+/* ── actions ──────────────────────────────────────────────────────────── */
+
+function rnStart() {
+  if (rn.busy) return;
+  rn.busy = true;
+  const projectId = rn.projectId;
+  rn.showPlan = false;
+  cmPost('/api/run/' + encodeURIComponent(projectId) + '/start', { choices: rn.choices.get(projectId) || {} })
+    .then((r) => {
+      rn.busy = false;
+      if (rnStale() || rn.projectId !== projectId) return;
+      rn.run = r.run;
+      rnPaint();
+      rnOpenStream(true);
+    })
+    .catch((err) => {
+      rn.busy = false;
+      if (rnStale()) return;
+      rn.run = null;
+      rn.planError = null;
+      rnPaint();
+      rn.node._body.prepend(h('div', 'rn-diag', 'Could not start: ' + (err.message || 'unknown error')));
+    });
+}
+
+function rnStop() {
+  cmPost('/api/run/' + encodeURIComponent(rn.projectId) + '/stop')
+    .then((r) => { if (!rnStale() && r.run) { rn.run = Object.assign({}, rn.run, r.run, { log: rn.run.log }); rnPaint(); } })
+    .catch(() => {});
+}
+
+function rnRefreshPlan() {
+  rnPaint();
+  getJSON('/api/run/' + encodeURIComponent(rn.projectId) + '/plan')
+    .then((plan) => { if (!rnStale()) { rn.plan = plan; rnPaint(); } })
+    .catch(() => {});
+}
+
+/** Hand the failure to a Comms chat in this project, with the log attached. */
+function rnAskAgent(btn) {
+  const run = rn.run;
+  if (!run || !cm.node || cm.projectId !== rn.projectId) return;
+  btn.disabled = true;
+  getJSON('/api/run/' + encodeURIComponent(rn.projectId) + '/tail')
+    .then((r) => {
+      const steps = (run.steps || []).map((s) => `- ${s.label}: \`${s.command}\` (${s.state})`).join('\n');
+      const prompt = [
+        'I pressed "Run" on this project in Ground Control and it failed. Please find out why and fix it so it runs.',
+        '',
+        'What Ground Control ran:',
+        steps,
+        '',
+        `Its diagnosis: ${run.diagnosis ? run.diagnosis.title + '. ' + (run.diagnosis.detail || '') : 'none'}`,
+        (run.fixes || []).length ? 'It already tried: ' + run.fixes.map((f) => f.action).join(' ') : '',
+        '',
+        'The end of the output:',
+        '```',
+        r.tail || '(no output)',
+        '```',
+        '',
+        'Change what needs changing in the project, then tell me in a sentence or two what was wrong. I will press Run again myself.',
+      ].filter((l) => l !== null).join('\n');
+      return cmStart({}).then((chat) => {
+        cmSend(chat.id, prompt);
+        if (cm.node) cm.node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    })
+    .catch(() => { btn.disabled = false; });
+}
+
+/* ── the live stream ──────────────────────────────────────────────────── */
+
+function rnOpenStream(fresh) {
+  if (rn.es && !fresh) return;
+  rnCloseStream();
+  if (rnStale()) return;
+  let src;
+  try { src = new EventSource('/api/run/' + encodeURIComponent(rn.projectId) + '/stream'); }
+  catch { return; }
+  rn.es = src;
+  const mine = () => rn.es === src && !rnStale();
+
+  src.addEventListener('open', () => { if (mine()) rn.esAttempt = 0; });
+  src.addEventListener('hello', (ev) => {
+    if (!mine()) return;
+    let data = null;
+    try { data = JSON.parse(ev.data); } catch { return; }
+    if (data && data.run) { rn.run = data.run; rnPaint(); }
+  });
+  src.addEventListener('state', (ev) => {
+    if (!mine()) return;
+    let data = null;
+    try { data = JSON.parse(ev.data); } catch { return; }
+    if (!data || !data.run) return;
+    const log = rn.run && rn.run.id === data.run.id ? rn.run.log : [];
+    rn.run = Object.assign({}, data.run, { log });
+    rnPaint();
+    if (!rnActive(rn.run)) rnCloseStream();
+  });
+  /* Log lines arrive several times a second while installing: append them to
+   * the open log rather than repainting the panel. */
+  src.addEventListener('log', (ev) => {
+    if (!mine()) return;
+    let data = null;
+    try { data = JSON.parse(ev.data); } catch { return; }
+    if (!data || !rn.run || data.runId !== rn.run.id) return;
+    // `hello` may already have carried some of these lines: keep only new ones.
+    const have = (rn.run.log || []).length ? rn.run.log[rn.run.log.length - 1].n : 0;
+    const fresh = data.lines.filter((e) => e.n > have);
+    if (!fresh.length) return;
+    data.lines = fresh;
+    rn.run.log = (rn.run.log || []).concat(fresh).slice(-RN_LOG_DOM_MAX);
+    const box = rn.node.querySelector('.rn-log');
+    if (!box) return;
+    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    const waiting = box.querySelector('.rn-line.is-sys:only-child');
+    if (waiting && waiting.textContent === 'Waiting for output…') waiting.remove();
+    for (const e of data.lines) box.append(rnLine(e, rn.run.multi));
+    while (box.childElementCount > RN_LOG_DOM_MAX) box.firstElementChild.remove();
+    if (atBottom) box.scrollTop = box.scrollHeight;
+  });
+  src.addEventListener('error', () => {
+    if (!mine()) return;
+    rnCloseStream();
+    if (!rnActive(rn.run)) return;
+    const wait = RN_BACKOFF[Math.min(rn.esAttempt, RN_BACKOFF.length - 1)];
+    rn.esAttempt += 1;
+    rn.esTimer = setTimeout(() => { if (!rnStale()) rnOpenStream(true); }, wait);
+  });
+}
+
+function rnCloseStream() {
+  if (rn.esTimer) { clearTimeout(rn.esTimer); rn.esTimer = 0; }
+  if (rn.es) { try { rn.es.close(); } catch { /* ignore */ } rn.es = null; }
+}
+
+function rnTeardown() {
+  rnCloseStream();
+  rn.node = null;
 }
