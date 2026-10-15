@@ -10,48 +10,20 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import path from 'node:path';
 
-import { fixtureRoot, cleanupFixtures, project, write } from './helpers.js';
-import { scanRoot } from '../lib/scan.js';
-import { buildBrief, briefToMarkdown, COVERAGE_MAX_PARTS } from '../lib/brief.js';
+import { cleanupFixtures } from './helpers.js';
+import { briefToMarkdown, COVERAGE_MAX_PARTS } from '../lib/brief.js';
 import { renderArtifact } from '../lib/artifact-template.js';
 import { coverageTable } from '../lib/artifact-parts.js';
 import { authoringPrompt, designPrompt, codePrompt } from '../lib/house-style.js';
 import {
   measureCoverage, validateCoverage, coverageAppendix, spliceIntoMain, cleanFragment, repairPrompt,
-  startGeneration, claudeAvailable,
+  claudeAvailable,
 } from '../lib/generate.js';
-import * as jobs from '../lib/jobs.js';
+import { code, DEMO, briefFor, page, teach, installFakeClaude, generate } from './forge-fake.js';
 
 test.after(cleanupFixtures);
-
-/** A source file with a real header comment and some bulk behind it. */
-const code = (header, n) => `/**\n * ${header}\n */\n`
-  + Array.from({ length: n }, (_, i) => `export function f${i}(a, b) { return a + b * ${i}; }`).join('\n') + '\n';
-
-const DEMO = {
-  'package.json': JSON.stringify({ name: 'demo', main: 'server.js', scripts: { test: 'node --test' } }),
-  'README.md': '# demo\n\nA demo service that answers requests from a store.\n',
-  '.gitignore': 'node_modules\n',
-  'server.js': code('Demo server: answers HTTP requests from the store.', 80),
-  'src/store.js': code('The store: keeps every record in one JSON file.', 120),
-  'src/router.js': code('Routing: maps a URL to a handler.', 70),
-  'src/util/strings.js': code('String helpers for the router.', 3),
-  'src/util/dates.js': code('Date helpers for the router.', 3),
-  'test/store.test.js': code('Tests for the store.', 10),
-  'docs/guide.md': '# A guide to the demo\n\nRead this.\n',
-  'data/sample.csv': 'a,b\n1,2\n',
-};
-
-async function briefFor(files, name = 'demo', state = 'clean') {
-  const root = fixtureRoot('coverage');
-  project(root, name, { files, state });
-  const res = await scanRoot(root);
-  const p = (res.projects || res).find((x) => x.name === name);
-  return { project: p, brief: await buildBrief(p, {}) };
-}
 
 const byId = (brief) => new Map(brief.coverageMap.parts.map((p) => [p.id, p]));
 
@@ -236,88 +208,32 @@ test('the data-only artifact addresses every part on the map', async () => {
 
 /* ---- the authored path, end to end, against a fake CLI ------------- */
 
-/**
- * A stand-in `claude` on PATH. It prints canned stream-json: the first turn
- * returns FAKE_FIRST, a `--resume` turn returns FAKE_REPAIR, and every prompt
- * it receives is appended to FAKE_LOG so the test can read what was asked.
- */
-const FAKE = String.raw`
-const fs = require('fs');
-const argv = process.argv.slice(2);
-if (argv.includes('--version')) { console.log('9.9.9 (Claude Code)'); process.exit(0); }
-let input = '';
-process.stdin.on('data', (c) => { input += c; });
-process.stdin.on('end', () => {
-  const resume = argv.includes('--resume');
-  fs.appendFileSync(process.env.FAKE_LOG, (resume ? '=== REPAIR ===\n' : '=== FIRST ===\n') + input + '\n');
-  const file = resume ? process.env.FAKE_REPAIR : process.env.FAKE_FIRST;
-  const out = file && fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
-  const sid = 'sess-fake-1';
-  console.log(JSON.stringify({ type: 'system', subtype: 'init', session_id: sid, model: 'fake' }));
-  console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: out,
-    session_id: sid, total_cost_usd: 0.01, duration_ms: 5 }));
-});
-`;
-
-const bin = fixtureRoot('fakebin');
-write(bin, 'claude', `#!${process.execPath}\n${FAKE}`);
-fs.chmodSync(path.join(bin, 'claude'), 0o755);
-process.env.PATH = `${bin}${path.delimiter}${process.env.PATH}`;
-
-/** A real-looking page: over 2 KB, a title, a style, and the given body. */
-function page(body) {
-  return `<!DOCTYPE html><html><head><title>Taking over demo</title><style>${'body{margin:0}\n'.repeat(160)}</style></head>`
-    + `<body><main class="wrap">${body}</main><footer><div class="wrap">end</div></footer></body></html>`;
-}
-
-/** Sections teaching every part on the map except those in `skip`. */
-function teach(parts, skip = []) {
-  return parts.filter((p) => !skip.includes(p.id)).map((p) =>
-    `<section data-part="${p.id}"><h2 class="sec">${p.path}</h2><p class="body">${words(p.importance === 'core' ? 70 : 12)}</p></section>`).join('\n');
-}
-
-async function generate(brief, proj, first, repair) {
-  const dir = fixtureRoot('forge');
-  const env = { FAKE_LOG: path.join(dir, 'prompts.log'), FAKE_FIRST: path.join(dir, 'first.html'), FAKE_REPAIR: path.join(dir, 'repair.html') };
-  fs.writeFileSync(env.FAKE_FIRST, first);
-  if (repair != null) fs.writeFileSync(env.FAKE_REPAIR, repair);
-  Object.assign(process.env, env);
-
-  const jobId = jobs.newJobId();
-  startGeneration({ project: proj, brief, tier: 'authored', kind: 'onboarding', model: 'fake', jobId, stagingPath: path.join(dir, `${jobId}.html`) });
-  const deadline = Date.now() + 20_000;
-  let job;
-  while (Date.now() < deadline) {
-    job = jobs.get(jobId);
-    if (job && jobs.isTerminal(job.state)) break;
-    await new Promise((r) => setTimeout(r, 50));
-  }
-  const log = fs.existsSync(env.FAKE_LOG) ? fs.readFileSync(env.FAKE_LOG, 'utf8') : '';
-  return { job, log, staged: job && job.state === 'done' ? fs.readFileSync(job.stagingPath, 'utf8') : '' };
-}
+const fakePath = installFakeClaude();
 
 test('the fake CLI is the one Forge finds', () => {
   const a = claudeAvailable(true);
   assert.equal(a.available, true);
-  assert.equal(a.path, path.join(bin, 'claude'));
+  assert.equal(a.path, fakePath);
 });
 
 test('a skipped part is asked for in a second turn of the same session, and spliced in', async () => {
   const { brief, project: proj } = await briefFor(DEMO);
   const parts = brief.coverageMap.parts;
-  const skipped = parts.find((p) => p.importance === 'supporting');
-  const fragment = `<section data-part="${skipped.id}"><h2 class="sec">${skipped.path}</h2><p class="body">${words(30)}</p></section>`;
+  const skipped = parts.find((p) => p.importance === 'minor');
+  const fragment = `<section data-part="${skipped.id}"><h2 class="sec">${skipped.path}</h2><p class="body">${'word '.repeat(30)}</p></section>`;
 
-  const { job, log, staged } = await generate(brief, proj, page(teach(parts, [skipped.id])), fragment);
+  const { job, log, count, staged } = await generate(brief, proj, { first: page(teach(parts, [skipped.id])), repair: fragment });
   assert.equal(job.state, 'done', job.error);
   assert.ok(log.includes('=== FIRST ===') && log.includes('data-part="<id>"'), 'the first prompt does not ask for markers');
-  assert.ok(log.includes('=== REPAIR ==='), 'NO REPAIR TURN WAS RUN');
+  assert.equal(count('REPAIR'), 1, 'NO COVERAGE REPAIR TURN WAS RUN');
   assert.ok(log.split('=== REPAIR ===')[1].includes(`\`${skipped.id}\``), 'the repair prompt does not name the skipped part');
   assert.equal(job.coverage.repaired, true);
   assert.equal(job.coverage.covered, job.coverage.total);
   assert.ok(staged.includes(fragment), 'the repaired section is not in the staged page');
   assert.ok(staged.indexOf(fragment) < staged.indexOf('</main>'));
-  assert.equal(job.costUsd, 0.02, 'both turns count toward usage');
+  // Every turn counts toward usage: write, coverage repair, review.
+  assert.deepEqual(job.turns.map((t) => t.purpose), ['write', 'coverage-repair', 'review']);
+  assert.equal(Math.round(job.costUsd * 100), job.turns.length);
 });
 
 test('a core part still missing after the repair turn refuses the document', async () => {
@@ -325,7 +241,7 @@ test('a core part still missing after the repair turn refuses the document', asy
   const parts = brief.coverageMap.parts;
   const core = parts.find((p) => p.importance === 'core');
 
-  const { job } = await generate(brief, proj, page(teach(parts, [core.id])), 'I could not do that.');
+  const { job } = await generate(brief, proj, { first: page(teach(parts, [core.id])), repair: 'I could not do that.' });
   assert.equal(job.state, 'failed');
   assert.equal(job.errorKind, 'incomplete-coverage');
   assert.ok(job.error.includes(core.path), `the refusal does not name the part: ${job.error}`);
@@ -337,7 +253,7 @@ test('a minor part the repair could not supply is listed from facts, and the pag
   const parts = brief.coverageMap.parts;
   const minor = parts.find((p) => p.importance === 'minor');
 
-  const { job, staged } = await generate(brief, proj, page(teach(parts, [minor.id])), '');
+  const { job, staged } = await generate(brief, proj, { first: page(teach(parts, [minor.id])), repair: '' });
   assert.equal(job.state, 'done', job.error);
   assert.deepEqual(job.coverage.listed, [minor.id]);
   assert.equal(job.coverage.covered, job.coverage.total - 1, 'listed is reported apart from covered');
@@ -345,11 +261,14 @@ test('a minor part the repair could not supply is listed from facts, and the pag
   assert.ok(staged.includes(`data-part="${minor.id}"`));
 });
 
-test('a document that covers everything first time needs no second turn', async () => {
+test('a document that covers and teaches everything first time needs only the review', async () => {
   const { brief, project: proj } = await briefFor(DEMO);
-  const { job, log } = await generate(brief, proj, page(teach(brief.coverageMap.parts)), null);
+  const { job, count } = await generate(brief, proj, { first: page(teach(brief.coverageMap.parts)) });
   assert.equal(job.state, 'done', job.error);
-  assert.ok(!log.includes('=== REPAIR ==='));
+  assert.equal(count('REPAIR') + count('TEACH'), 0);
+  assert.equal(count('REVIEW'), 1);
   assert.equal(job.coverage.covered, job.coverage.total);
   assert.deepEqual(job.coverage.listed, []);
+  assert.equal(job.teaching.core.passed, job.teaching.core.total);
+  assert.equal(job.teaching.rubric.avg, 5);
 });

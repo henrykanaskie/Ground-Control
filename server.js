@@ -867,6 +867,10 @@ function forgeJobJSON(job) {
   // Which parts of the project the document addressed, and which it did not
   // (CONTRACT-FORGE.md §4.7). Shown beside the shape for the same reason.
   if (out && job && job.coverage) out.coverage = job.coverage;
+  // Whether each part is taught, not only covered (§4.8), and every model
+  // turn the job ran, so the usage figure can say what it paid for.
+  if (out && job && job.teaching) out.teaching = job.teaching;
+  if (out && job && Array.isArray(job.turns)) out.turns = job.turns;
   return out;
 }
 

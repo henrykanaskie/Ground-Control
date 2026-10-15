@@ -204,6 +204,25 @@ listed from repository facts at the end of the page rather than left out
 silently. The data-only artifact lists every part too. The figure ("23 of 24
 parts covered") sits next to the reading time.
 
+Covered is not the same as **taught**, so each core part is then checked for
+four things a regex can count: **grounding** (a real identifier, path or
+excerpt from that part's own files, and no `<code>` name that exists nowhere
+in the repository), a **trade-off** (a decision card or comparison), a
+**connection** to another part by its path, and a **question for the
+learner** (a predict-then-read reveal). Supporting parts need grounding and a
+connection. Then a separate read-only session opens the files and grades each
+core and supporting part on a fixed rubric (accurate against the code,
+explains why, a newcomer could follow it, connects to the rest; 1-5 each, a
+pass needs no score below 3 and a mean of 3.5). Its JSON answer is untrusted
+and parsed defensively. Whatever fails either goes back through one repair
+turn naming the specific problems, rewritten sections replace the old ones
+only where they measurably improve, rewritten parts are re-reviewed once, and
+a core part that still fails refuses the document. That is at most four
+extra turns, all of them in the usage figure; a document that is right first
+time costs one (the review). The result reads "core parts taught: 3/3 ·
+rubric avg 4.2/5". Only program code can be core: stylesheets, markup,
+generated, vendored and lock files never are.
+
 Generated artifacts go to a `.forge/` staging area. **Saving into a project is a
 separate, explicitly confirmed action**, and it refuses to overwrite an existing
 file without a second confirmation.
@@ -278,7 +297,7 @@ delete and no keyboard shortcut. Every removal is logged to
 ## Tests
 
 ```bash
-npm test          # 147 tests, ~5s, no dependencies
+npm test          # 169 tests, ~5s, no dependencies
 ```
 
 Node's built-in runner: no framework, nothing to install. The suite is
@@ -310,6 +329,13 @@ toward coverage percentage:
   does not count as taught, and, against a fake `claude` CLI, that a skipped
   part is asked for in a second turn, that a still-missing core part refuses
   the document, and that a missing minor part is listed rather than dropped.
+- **Forge's teaching gate**: that a core part with no trade-off, no connection
+  or no question for the learner fails, that an invented identifier or path
+  fails grounding while an alternative inside a decision card does not, that
+  malformed or markup-laden rubric JSON is handled without ever reaching the
+  page, and, against the fake CLI, that a failing part gets exactly one repair
+  and is re-measured, that a rubric failure is re-reviewed, that a core part
+  still failing refuses the document, and that a stylesheet is never core.
 - **Regressions from real bugs**: a root README losing to a nested `CLAUDE.md`;
   `#StockPortfolio` with no space leaking in as a blurb; virtualenv bulk counting
   as meaningful content; and a live agent process being reported as *working*
@@ -329,6 +355,7 @@ lib/docs.js             doc discovery, classification, featured pick, blurb
 lib/util.js             relative time, formatting, slugs
 lib/brief.js            the deterministic repo brief Forge writes from
 lib/generate.js         the `claude` subprocess, streaming, output validation
+lib/teaching.js         the teaching checks and the rubric review's prompt and parser
 lib/jobs.js             generation job registry
 lib/house-style.js      art direction + the authoring prompt
 lib/artifact-*.js       the deterministic artifact and its components

@@ -254,6 +254,7 @@ and the generator counts the markers (§4.7).
       "weight": 15,                // the score importance is ranked by
       "files": 1, "bytes": 117000,
       "members": null,             // a group's file or directory names (≤ 12)
+      "scope": ["lib/brief.js"],   // files a teaching check may search (≤ 40, code first; §4.8)
       "description": "JavaScript, 115 KB; ranked entry point; 2 file changes in the last 400 commits; header: \"Ground Control Forge: the repo brief.\"" }
   ],
   "maxParts": 28, "totalFiles": 74, "groupedFiles": 22, "truncated": false
@@ -282,8 +283,14 @@ large the repository:
 `weight` = share of source bytes (0–100) + share of git churn over the last 400
 commits (0–30) + an entry-point bonus (20 for the top-ranked entry, 6 for any
 other). **Core** parts are the heaviest *source* parts that together carry half
-the source weight (at most 8), plus whichever holds the top entry point. Tests,
-docs, config, CI, data, assets, scripts and examples are never core. Tests and
+the source weight (at most 8), plus whichever holds the top entry point. Only
+**program code** is eligible: a part must have program-code bytes making up at
+least half of its source bytes, where stylesheets and markup (CSS, SCSS, HTML,
+SVG, XML, Markdown) count as source but not as program code. Generated,
+vendored, minified and lock files (`*.min.*`, `*.bundle.*`, `*.d.ts`, `*_pb2.py`,
+`*.lock`, `*-lock.json`, anything under `generated/`, `vendor/`, `third_party/`,
+`dist/`, `build/`, …) carry no source weight at all. Tests, docs, config, CI,
+data, assets, scripts and examples are never core. Tests and
 schemas are always at least **supporting**; other code is supporting from
 weight 4, non-code from weight 10; everything else is **minor**.
 
@@ -366,6 +373,16 @@ The prompt (stdin or argv) is the authoring instruction plus the brief.
                 "missing": [], "thin": [ { "id": "root-config", "words": 3, … } ],
                 "unknownIds": [], "repaired": true, "listed": ["root-config"] },
                 // template/local tiers: "mode": "listed", no repaired/listed
+  "teaching": { "core": { "total": 3, "passed": 3 }, "supporting": { "total": 12, "passed": 11 },
+                "rubric": { "status": "ok", "avg": 4.2, "scored": 15, "unscored": [], … },
+                "rewritten": ["lib-brief-js"],
+                "parts": [ { "id": "lib-brief-js", "pass": true,
+                             "checks": { "pass": true, "missing": [], "problems": [], "exempt": [] },
+                             "rubric": { "scores": { "accurate": 5, "why": 4, "followable": 4, "connected": 4 },
+                                         "mean": 4.3, "pass": true, "problems": [] },
+                             "rewritten": true, … } ] },
+  "turns": [ { "purpose": "write", "costUsd": 0.61, "durationMs": 540000, "ok": true },
+             { "purpose": "review", "costUsd": 0.12, … }, … ],   // costUsd above is their sum
   "suggestedFilename": "ONBOARDING.html"   // "DESIGN.html" when kind is "design"
 }
 ```
@@ -447,6 +464,85 @@ The figure is shown next to the size and reading time ("23 of 24 parts covered
 the core threshold off (`mode: "listed"`): they list every part from facts by
 construction (§8) and cannot teach any of them, so there is nothing to gate or
 repair.
+
+### 4.8 Teaching: covered is not the same as taught
+
+Coverage (§4.7) proves a part was mentioned at some length; fifty words that
+restate a file name pass it. So every covered core and supporting part is then
+checked for whether it is **taught**, deterministically first and by a
+reviewer second, and a core part that is not taught refuses the document.
+
+**The deterministic checks** (`lib/teaching.js`, no model). Every element
+marked with the part's id counts, so a decision card marked with that id
+elsewhere on the page is part of its teaching.
+
+| Check | Passes when | Required for |
+|---|---|---|
+| **grounding** | at least one claim is found in the part's **own** files (its `scope`, §3d): an identifier in `<code>` (camelCase, snake_case, dotted, called `()` or a CONSTANT, not an English word), a path in `<code>` (`looksLikePath` from lib/local.js), or a line of a `<pre>` excerpt that appears verbatim in the file; **and** no claim is *invented*: a `<code>` identifier found in no file on the map, a path that does not exist (`existsInProject`), or a multi-line excerpt none of whose lines exist. Names inside a decision card's alternatives (`ul.dalts`) or a `table.vs` are not read as claims, because they are what the repository did *not* use. A name only checkable past the 12 MB read cap is "unverifiable", never "invented". | core, supporting |
+| **trade-off** | a `.decide` card or a `table.vs` inside the part's elements, or one reached by an `<a href="#id">` from them | core |
+| **connection** | another part on the map named by its path (a file path, or `dir/` and anything under it; a root group by a member name such as `package.json`) or linked by `href="#<its id>"` | core, supporting |
+| **learner check** | a `details.guess`, or any `<details>` whose `<summary>` asks a question | core |
+
+Two exemptions, recorded on the part as `exempt`: a core part under **2 KB**
+needs no trade-off or learner check (the house style calls a card with no real
+alternative a costume), and a project with no other part needs no connection.
+Files are read once per generation through the brief's sensitive-file gate,
+binaries skipped, 512 KB per file and 12 MB in all.
+
+**The rubric review.** One fresh, read-only `claude` session (same argv, same
+`Read`/`Glob`/`Grep` allow-list and deny-list, same stripped environment, same
+`runClaudeTurn` plumbing, a reviewer's system prompt instead of the house
+style) gets the document, with its stylesheet removed, inside a defused
+`<<<DOCUMENT … DOCUMENT>>>` fence, plus the list of core and supporting parts
+with their files, and is told to open those files before scoring. Each part is
+scored 1-5 on:
+
+| Criterion | Question |
+|---|---|
+| `accurate` | Does every claim, name and step check out in the files? |
+| `why` | Does it explain why, not only what: the trade-off, and what the alternative would cost here? |
+| `followable` | Could a newcomer follow it: terms glossed, steps in order, nothing assumed? |
+| `connected` | Does it say how this part relates to the parts it uses and that use it? |
+
+A part **passes the rubric** when no score is below **3** and the mean is at
+least **3.5**. The answer is untrusted model output and is parsed defensively
+(`parseReview`): the outermost `{…}` in it, fenced or not; only ids that were
+asked about, each once; only integer scores 1-5 (an entry with any other value
+is dropped); problems reduced to plain text with every `<`, `>` and backtick
+removed, at most 5 per part and 240 characters each. Problems are never put into
+the page; they reach the repair prompt only inside a fenced data block, and the
+UI only as tooltip text. A review that cannot be used (malformed, scored
+nothing, or the turn failed) leaves `rubric.status: "unavailable"` with its
+reason, and the gate then rests on the deterministic checks alone; parts it did
+not score are listed in `unscored` and are not held against the document.
+
+**One teaching repair.** Every core or supporting part failing either the checks
+or the rubric goes into one resumed turn of the authoring session, naming for
+each part the checks it missed and the reviewer's low criteria, with the
+specific problems as data. The answer must be one replacement
+`<section data-part="<id>">` per part, and passes the same fragment safety as
+the coverage repair. Each section **replaces** the part's main section (or is
+appended to `<main>` when the part only had a table row) and is kept only if
+the page still validates, no other part loses coverage, and the part is
+measurably better: fewer checks missing, or, for a part there only for its
+rubric score, still passing every check. Parts rewritten for the rubric's sake
+are then **re-reviewed once**; with no fresh score, a stale score is not held
+against new text, and the part moves to `unscored`.
+
+**The gate** refuses with errorKind `weak-teaching` when any **core** part still
+fails its checks or its rubric, naming the part and what it lacks ("src/store.js
+lacks trade-off", "server.js reviewer scored accurate 2/5"). Supporting parts
+that fail are reported, not refused.
+
+**Turns and cost.** At most **4 extra turns** after the first (`MAX_EXTRA_TURNS`):
+coverage repair, review, teaching repair, re-review, each only when needed, so
+a document that is right first time costs exactly one extra turn (the review).
+Each is recorded in `turns` with its own usage and duration, `costUsd` is
+their sum, and the UI says "across N model turns". Worst-case wall time is the
+first turn's 20 minutes plus 8 per extra turn.
+
+The figure beside coverage reads "core parts taught: 3/3 · rubric avg 4.2/5".
+The data-only and local tiers write no prose to grade and are not checked.
 
 ---
 

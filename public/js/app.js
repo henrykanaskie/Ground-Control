@@ -1987,7 +1987,11 @@ function usageSentence(job) {
   const c = job && job.costUsd;
   if (typeof c !== 'number' || !isFinite(c) || c <= 0) return null;
   const amount = c < 0.01 ? '<$0.01' : '~$' + c.toFixed(2);
-  return amount + ' of list-price usage: counts toward your Claude subscription, not billed separately.';
+  // The checking turns (repair, review, re-review) are part of the figure, so
+  // say how many there were rather than let them look like the writing.
+  const turns = Array.isArray(job.turns) ? job.turns.length : 0;
+  const across = turns > 1 ? ' across ' + turns + ' model turns (' + (turns - 1) + ' for repair and review)' : '';
+  return amount + ' of list-price usage' + across + ': counts toward your Claude subscription, not billed separately.';
 }
 
 const previewUrl = (jobId) => '/api/forge/job/' + encodeURIComponent(jobId) + '/preview';
@@ -2710,6 +2714,32 @@ function coverageSentence(job) {
   return wrap;
 }
 
+/**
+ * Whether the parts are taught, not only covered (CONTRACT-FORGE.md §4.8):
+ * how many core parts passed the deterministic checks and the rubric review,
+ * and the rubric's average. The tooltip names what any failing part lacks.
+ */
+function teachingSentence(job) {
+  const t = job && job.teaching;
+  if (!t || !t.core || !t.core.total) return null;
+  const wrap = h('span', 'forge-tag');
+  const r = t.rubric || {};
+  wrap.textContent = 'core parts taught: ' + t.core.passed + '/' + t.core.total
+    + (r.status === 'ok' && typeof r.avg === 'number' ? ' · rubric avg ' + r.avg.toFixed(1) + '/5'
+      : r.status === 'unavailable' ? ' · rubric unavailable' : '');
+  const weak = (t.parts || []).filter((p) => !p.pass);
+  if (weak.length) wrap.classList.add('is-thin');
+  const bits = [];
+  if (t.supporting && t.supporting.total) bits.push('supporting parts taught: ' + t.supporting.passed + '/' + t.supporting.total);
+  if ((t.rewritten || []).length) bits.push((t.rewritten || []).length + ' part(s) rewritten after review');
+  for (const p of weak.slice(0, 6)) {
+    bits.push(p.path + ': ' + ((p.checks && p.checks.missing.length) ? 'lacks ' + p.checks.missing.join(', ') : 'below the rubric'));
+  }
+  if (r.status === 'unavailable' && r.reason) bits.push('rubric review: ' + r.reason);
+  wrap.title = bits.join('; ') || 'Every graded part passed the teaching checks and the rubric.';
+  return wrap;
+}
+
 function paintForgeMeta(st) {
   if (!st.els || !st.els.meta) return;
   const meta = st.els.meta;
@@ -2771,6 +2801,8 @@ function paintForgeDone(st, box) {
   if (shape) facts.append(shape);
   const coverage = coverageSentence(job);
   if (coverage) facts.append(coverage);
+  const teaching = teachingSentence(job);
+  if (teaching) facts.append(teaching);
 
   const usage = usageSentence(job);
   if (usage) box.append(forgeNote('i-check', usage, 'is-quiet'));
