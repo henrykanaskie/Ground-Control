@@ -864,6 +864,9 @@ function forgeJobJSON(job) {
   // The structural report (CONTRACT-FORGE.md §4.6). Shown to the reader
   // because a document's shape is a fact about it they can act on.
   if (out && job && job.shape) out.shape = job.shape;
+  // Which parts of the project the document addressed, and which it did not
+  // (CONTRACT-FORGE.md §4.7). Shown beside the shape for the same reason.
+  if (out && job && job.coverage) out.coverage = job.coverage;
   return out;
 }
 
@@ -1008,6 +1011,11 @@ async function forgeGenerate(req, res) {
         + `${d.commitRationale.length} commit message(s) with a body`);
     } else {
       jobslib.appendProgress(job.id, `brief ready: ${brief.composition.fileCount} files, ${brief.prose.length} existing document(s)`);
+    }
+    const parts = (brief.coverageMap && brief.coverageMap.parts) || [];
+    if (parts.length) {
+      jobslib.appendProgress(job.id,
+        `coverage map: ${parts.length} part(s) to address, ${parts.filter((p) => p.importance === 'core').length} of them core`);
     }
     generate.startGeneration({
       project, brief, kind, tier, audience, jobId: job.id, stagingPath,

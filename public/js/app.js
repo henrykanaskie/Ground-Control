@@ -2677,6 +2677,39 @@ function shapeSentence(job) {
   return wrap;
 }
 
+/**
+ * How much of the project the document addresses (CONTRACT-FORGE.md §4.7).
+ *
+ * A document can read well and still skip the one module you needed, and
+ * nothing about its length or its diagrams would tell you. This is the count
+ * of parts on the brief's coverage map that the document actually addressed,
+ * with the ones Ground Control had to list from facts called out separately,
+ * because "listed" and "taught" are not the same promise.
+ */
+function coverageSentence(job) {
+  const c = job && job.coverage;
+  if (!c || !c.total) return null;
+  const wrap = h('span', 'forge-tag');
+  const listed = (c.listed || []).length;
+  if (c.mode === 'listed') {
+    wrap.textContent = c.covered + ' of ' + c.total + ' parts listed';
+    wrap.title = 'The data-only page names and describes every part of the project from repository '
+      + 'facts. It cannot teach how any of them works.';
+    return wrap;
+  }
+  wrap.textContent = c.covered + ' of ' + c.total + ' parts covered'
+    + (listed ? ' \u00b7 ' + listed + ' listed from facts' : '');
+  const core = c.core || {};
+  const bits = [(core.covered || 0) + ' of ' + (core.total || 0) + ' core parts taught'];
+  if (c.repaired) bits.push('the missing parts were asked for in a second turn');
+  if (listed) {
+    wrap.classList.add('is-thin');
+    bits.push(listed + ' part(s) the author skipped are listed from repository facts at the end of the page');
+  }
+  wrap.title = bits.join('; ') + '.';
+  return wrap;
+}
+
 function paintForgeMeta(st) {
   if (!st.els || !st.els.meta) return;
   const meta = st.els.meta;
@@ -2736,6 +2769,8 @@ function paintForgeDone(st, box) {
 
   const shape = shapeSentence(job);
   if (shape) facts.append(shape);
+  const coverage = coverageSentence(job);
+  if (coverage) facts.append(coverage);
 
   const usage = usageSentence(job);
   if (usage) box.append(forgeNote('i-check', usage, 'is-quiet'));

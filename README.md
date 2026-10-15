@@ -187,6 +187,23 @@ rather than staged. The prompts had asked for diagrams since the beginning; a
 real artifact still came out at 3810 words with zero. Asking harder is not a
 mechanism.
 
+The same goes for **covering the whole project**. A document can read well and
+still never mention the one module you needed. So the brief derives a
+**coverage map**: the repository grouped into at most 28 parts (top-level
+directories, the heaviest source directories split into their modules, small
+files folded into named groups such as "Build and configuration files"), each
+with an id, an importance, and a one-line description assembled from the files
+themselves. Depth follows importance: **core** parts are taught in full,
+**supporting** parts get a paragraph, **minor** parts a sentence each in one
+"rest of the project" table, so full coverage does not turn into a file list.
+Every part's treatment carries a `data-part` marker, and Forge counts them. A
+document that skips parts gets one follow-up turn in the same session asking
+for exactly those; after that it is refused if a core part is still untaught
+or under 80% of the parts are addressed, and any minor part still missing is
+listed from repository facts at the end of the page rather than left out
+silently. The data-only artifact lists every part too. The figure ("23 of 24
+parts covered") sits next to the reading time.
+
 Generated artifacts go to a `.forge/` staging area. **Saving into a project is a
 separate, explicitly confirmed action**, and it refuses to overwrite an existing
 file without a second confirmation.
@@ -261,7 +278,7 @@ delete and no keyboard shortcut. Every removal is logged to
 ## Tests
 
 ```bash
-npm test          # 99 tests, ~5s, no dependencies
+npm test          # 147 tests, ~5s, no dependencies
 ```
 
 Node's built-in runner: no framework, nothing to install. The suite is
@@ -287,6 +304,12 @@ toward coverage percentage:
   that race loses work. The test asserts `--fork-session` is in the argv, that
   later turns resume the fork rather than the original, and that a chat agent is
   never handed a folder beyond the project it was opened on.
+- **Forge's coverage gate**: that the coverage map accounts for every file of
+  a fixture repository exactly once and stays bounded on a sprawling one, that
+  a skipped part is detected, that a core part named in a single table row
+  does not count as taught, and, against a fake `claude` CLI, that a skipped
+  part is asked for in a second turn, that a still-missing core part refuses
+  the document, and that a missing minor part is listed rather than dropped.
 - **Regressions from real bugs**: a root README losing to a nested `CLAUDE.md`;
   `#StockPortfolio` with no space leaking in as a blurb; virtualenv bulk counting
   as meaningful content; and a live agent process being reported as *working*
