@@ -322,7 +322,7 @@ spawn is identical: same argv, same read-only tools, same validation.
 
 ```
 claude -p
-  --model <model>                     default "claude-opus-5"
+  --model <model>                     default "claude-opus-5-5"
   --output-format stream-json --verbose
   --add-dir <project.path>
   --allowedTools Read Glob Grep
@@ -357,7 +357,7 @@ The prompt (stdin or argv) is the authoring instruction plus the brief.
 ```jsonc
 {
   "id": "job_a1b2c3", "projectId": "r-log", "projectName": "rLog",
-  "kind": "onboarding", "tier": "authored", "model": "claude-opus-5",
+  "kind": "onboarding", "tier": "authored", "model": "claude-opus-5-5",
   "state": "queued|running|done|failed|cancelled",
   "startedISO": "...", "endedISO": null,
   "progress": [ { "atISO": "...", "text": "reading CLAUDE.md" } ],  // capped at 200
@@ -580,7 +580,7 @@ export const HOUSE_STYLE       // the art-direction spec, as a string
 export function authoringPrompt({ brief, project, audience }) -> string   // kind "onboarding"
 export function designPrompt({ brief, project, audience }) -> string      // kind "design", §7b
 export function codePrompt({ brief, project, audience }) -> string        // kind "code", §7c
-export const DEFAULT_MODEL = 'claude-opus-5'
+export const DEFAULT_MODEL = 'claude-opus-5-5'
 ```
 
 **The look is drawn from the artifacts this user already writes** (see
