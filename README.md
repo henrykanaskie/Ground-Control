@@ -278,6 +278,13 @@ to act, and the label is honest:
 | **An agent**, if you allow it | anything else in the code. *Let an agent fix it and re-run* hands the log to a Comms chat; when the agent finishes, Run starts the project again by itself, up to three times, and stops the moment it works. Tick *If it fails, let an agent fix it* and this happens without the click. |
 | **Needs you** | only what nobody else can know or decide: a secret value (an API key), installing a database that is not installed yet |
 
+**When Run fails and you can't see why**, `npm run doctor` lists what Run
+would do for every watched project and what it already sees wrong; `npm run
+doctor -- --try` runs each one (as Run would, without opening anything) and
+writes `~/ground-control-run-report.md` with each failure's diagnosis and the
+end of its log, secrets masked. It also says if your installed app is running
+older code than the repository.
+
 Each cure is tried at most once per run. A run keeps going when you leave the
 page; Stop takes down the whole process tree; quitting Ground Control stops every
 run; a `kill -9`ed server stops what it left behind on its next start. Every Run
