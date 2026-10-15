@@ -169,6 +169,8 @@ gathered deterministically (no model involved) and must include:
 - **Signals**: TODO/FIXME count with up to 15 samples (`file:line - text`),
   test layout, dirty files, config/env files present (names only: **never read
   `.env`, `creds*`, `*secret*`, `*key*`, `*.pem`; list the filename and stop**).
+- **Coverage map** (`coverageMap`, every kind): the parts of the project the
+  document must address. See §3d.
 
 ### 3b. The `design` block (`opts.kind === "design"`)
 
@@ -235,6 +237,73 @@ assembled when `kind === "code"`. Renders under a 60KB budget, shedding prose
 and tree depth before the import and construct tables, which are the document's
 whole subject.
 
+### 3d. The coverage map (`brief.coverageMap`, every kind)
+
+The goal is a document that leaves no part of the project silently skipped.
+Asking for that in the prompt is not a mechanism (§4.6 learned this about
+diagrams), and listing every file is not a document. So the brief derives an
+explicit, bounded list of **parts**, the prompts ask for each one to be marked,
+and the generator counts the markers (§4.7).
+
+```jsonc
+{
+  "parts": [
+    { "id": "lib-brief-js", "path": "lib/brief.js", "label": null,
+      "kind": "source",            // source|tests|docs|ci|schema|data|scripts|examples|assets|config|other
+      "importance": "core",        // core|supporting|minor
+      "weight": 15,                // the score importance is ranked by
+      "files": 1, "bytes": 117000,
+      "members": null,             // a group's file or directory names (≤ 12)
+      "scope": ["lib/brief.js"],   // files a teaching check may search (≤ 40, code first; §4.8)
+      "description": "JavaScript, 115 KB; ranked entry point; 2 file changes in the last 400 commits; header: \"Ground Control Forge: the repo brief.\"" }
+  ],
+  "maxParts": 28, "totalFiles": 74, "groupedFiles": 22, "truncated": false
+}
+```
+
+How the parts are formed (`buildCoverageMap`), bounded at **28 parts** however
+large the repository:
+
+1. Each **top-level directory** is a part. Root files are read by role:
+   source files stand alone (up to 6, entry points first; the rest become one
+   "Other source files at the root" group), and documentation, build and
+   configuration, data and anything else each become one **group** part.
+2. If that is already over budget, the lightest top-level directories fold
+   into one "Smaller top-level directories" group whose members are named.
+3. Then, while the budget allows, the **heaviest source directory is split**:
+   its subdirectories become parts, its source files that carry at least 1.5%
+   of the repository's source bytes (or are entry points) become parts, and
+   the remainder becomes one "`dir/`: the other files" group. A directory
+   holding exactly one directory (`Sources/App`) is descended into for free.
+   Tests, docs, data and assets are never split: one part each is enough.
+
+**Every file lands in exactly one part**, so the sum of `files` equals
+`totalFiles`; the tests assert it on a sprawling fixture.
+
+`weight` = share of source bytes (0–100) + share of git churn over the last 400
+commits (0–30) + an entry-point bonus (20 for the top-ranked entry, 6 for any
+other). **Core** parts are the heaviest *source* parts that together carry half
+the source weight (at most 8), plus whichever holds the top entry point. Only
+**program code** is eligible: a part must have program-code bytes making up at
+least half of its source bytes, where stylesheets and markup (CSS, SCSS, HTML,
+SVG, XML, Markdown) count as source but not as program code. Generated,
+vendored, minified and lock files (`*.min.*`, `*.bundle.*`, `*.d.ts`, `*_pb2.py`,
+`*.lock`, `*-lock.json`, anything under `generated/`, `vendor/`, `third_party/`,
+`dist/`, `build/`, …) carry no source weight at all. Tests, docs, config, CI,
+data, assets, scripts and examples are never core. Tests and
+schemas are always at least **supporting**; other code is supporting from
+weight 4, non-code from weight 10; everything else is **minor**.
+
+Each `description` is assembled from facts only: language and size or file
+count and dominant extension, the entry point it holds, the manifest it
+declares, its churn, and the first sentence of the header comment its author
+wrote (harvested inside the existing text scan, so it costs no extra I/O; a
+licence header or a bare path is skipped).
+
+`briefToMarkdown` renders the map as a table right after the entry points, and
+**never sheds it**: the document is measured against it, so a brief that lost
+it would fail every document for parts the author was never shown.
+
 ---
 
 ## 4. The generator - `lib/generate.js` (Agent D)
@@ -299,6 +368,21 @@ The prompt (stdin or argv) is the authoring instruction plus the brief.
   "shape": { "words": 3810, "minutes": 16, "paragraphs": 73, "diagrams": 2,
              "decisions": 3, "reveals": 1, "folds": 2, "tables": 4,
              "snippets": 5, "longestParagraph": 88, "longestProseRun": 3 },
+  "coverage": { "total": 24, "covered": 23, "ratio": 0.96,
+                "core": { "total": 4, "covered": 4 },
+                "missing": [], "thin": [ { "id": "root-config", "words": 3, … } ],
+                "unknownIds": [], "repaired": true, "listed": ["root-config"] },
+                // template/local tiers: "mode": "listed", no repaired/listed
+  "teaching": { "core": { "total": 3, "passed": 3 }, "supporting": { "total": 12, "passed": 11 },
+                "rubric": { "status": "ok", "avg": 4.2, "scored": 15, "unscored": [], … },
+                "rewritten": ["lib-brief-js"],
+                "parts": [ { "id": "lib-brief-js", "pass": true,
+                             "checks": { "pass": true, "missing": [], "problems": [], "exempt": [] },
+                             "rubric": { "scores": { "accurate": 5, "why": 4, "followable": 4, "connected": 4 },
+                                         "mean": 4.3, "pass": true, "problems": [] },
+                             "rewritten": true, … } ] },
+  "turns": [ { "purpose": "write", "costUsd": 0.61, "durationMs": 540000, "ok": true },
+             { "purpose": "review", "costUsd": 0.12, … }, … ],   // costUsd above is their sum
   "suggestedFilename": "ONBOARDING.html"   // "DESIGN.html" when kind is "design"
 }
 ```
@@ -334,6 +418,131 @@ Everything about that bar is deliberate:
   An earlier version of the rule required one, and the very document that
   prompted this work passed it: its runs are only five paragraphs long, because
   headings break them up. Headings do not make a wall of text readable.
+
+### 4.7 Coverage: every part, or a named reason why not
+
+`measureCoverage(html, coverageMap)` runs on every finished artifact. The
+prompts (§7) ask for the element that addresses each part to carry
+`data-part="<id>"` (several ids, space-separated, when one element genuinely
+explains several parts). For each marker the generator finds the element's
+extent and counts the words inside it. A part is **addressed** when some
+element marked with its id holds at least **6 words** (a sentence, not a bare
+path), and a **core** part only at **50 words**: core parts are meant to be
+taught, and a table row for the module everything depends on is the inventory
+this exists to prevent. Unaddressed parts are reported as `missing` (no marker)
+or `thin` (a marker on too little text); ids not on the map are reported in
+`unknownIds` and count for nothing.
+
+Then, in order:
+
+1. **Repair, once.** If any part is unaddressed and the first turn reported a
+   `session_id`, Forge resumes that same session (`--resume`, same read-only
+   tools, an 8-minute limit) with a prompt naming exactly the skipped parts and
+   asking for HTML fragments only, one `<section data-part>` per core or
+   supporting part and one table for the minor ones. A fragment is accepted
+   only if it carries a marker and contains no `<script>`, `<style>`, frame,
+   whole document or remote reference; it is spliced at the end of `<main>`,
+   and kept only if the page still validates and coverage went up. Cancelling
+   during the repair cancels the job; any other repair failure leaves the
+   original to be gated as it was. Its usage is added to the job's.
+2. **Gate** (`validateCoverage`). The document is refused, errorKind
+   `incomplete-coverage`, with a reason naming the parts, in exactly two cases:
+   - a **core** part is missing or thin, because a line of repository facts is
+     no substitute for teaching the part a reader most needs; or
+   - fewer than **80%** of all parts are addressed, because at that point the
+     document covers a different, smaller project.
+3. **List the rest.** Whatever minor or supporting part is still unaddressed is
+   appended at the end of `<main>` as a `section[data-coverage="facts"]`: a
+   table of each part's evidence description, headed as Ground Control's
+   listing rather than the author's teaching. The job records it in
+   `coverage.listed`, separately from `covered`. Refusing a ten-minute
+   generation over one config row would cost more than the defect; shipping it
+   with the row silently absent is the defect.
+
+The figure is shown next to the size and reading time ("23 of 24 parts covered
+· 1 listed from facts"). The data-only and local tiers are measured too, with
+the core threshold off (`mode: "listed"`): they list every part from facts by
+construction (§8) and cannot teach any of them, so there is nothing to gate or
+repair.
+
+### 4.8 Teaching: covered is not the same as taught
+
+Coverage (§4.7) proves a part was mentioned at some length; fifty words that
+restate a file name pass it. So every covered core and supporting part is then
+checked for whether it is **taught**, deterministically first and by a
+reviewer second, and a core part that is not taught refuses the document.
+
+**The deterministic checks** (`lib/teaching.js`, no model). Every element
+marked with the part's id counts, so a decision card marked with that id
+elsewhere on the page is part of its teaching.
+
+| Check | Passes when | Required for |
+|---|---|---|
+| **grounding** | at least one claim is found in the part's **own** files (its `scope`, §3d): an identifier in `<code>` (camelCase, snake_case, dotted, called `()` or a CONSTANT, not an English word), a path in `<code>` (`looksLikePath` from lib/local.js), or a line of a `<pre>` excerpt that appears verbatim in the file; **and** no claim is *invented*: a `<code>` identifier found in no file on the map, a path that does not exist (`existsInProject`), or a multi-line excerpt none of whose lines exist. Names inside a decision card's alternatives (`ul.dalts`) or a `table.vs` are not read as claims, because they are what the repository did *not* use. A name only checkable past the 12 MB read cap is "unverifiable", never "invented". | core, supporting |
+| **trade-off** | a `.decide` card or a `table.vs` inside the part's elements, or one reached by an `<a href="#id">` from them | core |
+| **connection** | another part on the map named by its path (a file path, or `dir/` and anything under it; a root group by a member name such as `package.json`) or linked by `href="#<its id>"` | core, supporting |
+| **learner check** | a `details.guess`, or any `<details>` whose `<summary>` asks a question | core |
+
+Two exemptions, recorded on the part as `exempt`: a core part under **2 KB**
+needs no trade-off or learner check (the house style calls a card with no real
+alternative a costume), and a project with no other part needs no connection.
+Files are read once per generation through the brief's sensitive-file gate,
+binaries skipped, 512 KB per file and 12 MB in all.
+
+**The rubric review.** One fresh, read-only `claude` session (same argv, same
+`Read`/`Glob`/`Grep` allow-list and deny-list, same stripped environment, same
+`runClaudeTurn` plumbing, a reviewer's system prompt instead of the house
+style) gets the document, with its stylesheet removed, inside a defused
+`<<<DOCUMENT … DOCUMENT>>>` fence, plus the list of core and supporting parts
+with their files, and is told to open those files before scoring. Each part is
+scored 1-5 on:
+
+| Criterion | Question |
+|---|---|
+| `accurate` | Does every claim, name and step check out in the files? |
+| `why` | Does it explain why, not only what: the trade-off, and what the alternative would cost here? |
+| `followable` | Could a newcomer follow it: terms glossed, steps in order, nothing assumed? |
+| `connected` | Does it say how this part relates to the parts it uses and that use it? |
+
+A part **passes the rubric** when no score is below **3** and the mean is at
+least **3.5**. The answer is untrusted model output and is parsed defensively
+(`parseReview`): the outermost `{…}` in it, fenced or not; only ids that were
+asked about, each once; only integer scores 1-5 (an entry with any other value
+is dropped); problems reduced to plain text with every `<`, `>` and backtick
+removed, at most 5 per part and 240 characters each. Problems are never put into
+the page; they reach the repair prompt only inside a fenced data block, and the
+UI only as tooltip text. A review that cannot be used (malformed, scored
+nothing, or the turn failed) leaves `rubric.status: "unavailable"` with its
+reason, and the gate then rests on the deterministic checks alone; parts it did
+not score are listed in `unscored` and are not held against the document.
+
+**One teaching repair.** Every core or supporting part failing either the checks
+or the rubric goes into one resumed turn of the authoring session, naming for
+each part the checks it missed and the reviewer's low criteria, with the
+specific problems as data. The answer must be one replacement
+`<section data-part="<id>">` per part, and passes the same fragment safety as
+the coverage repair. Each section **replaces** the part's main section (or is
+appended to `<main>` when the part only had a table row) and is kept only if
+the page still validates, no other part loses coverage, and the part is
+measurably better: fewer checks missing, or, for a part there only for its
+rubric score, still passing every check. Parts rewritten for the rubric's sake
+are then **re-reviewed once**; with no fresh score, a stale score is not held
+against new text, and the part moves to `unscored`.
+
+**The gate** refuses with errorKind `weak-teaching` when any **core** part still
+fails its checks or its rubric, naming the part and what it lacks ("src/store.js
+lacks trade-off", "server.js reviewer scored accurate 2/5"). Supporting parts
+that fail are reported, not refused.
+
+**Turns and cost.** At most **4 extra turns** after the first (`MAX_EXTRA_TURNS`):
+coverage repair, review, teaching repair, re-review, each only when needed, so
+a document that is right first time costs exactly one extra turn (the review).
+Each is recorded in `turns` with its own usage and duration, `costUsd` is
+their sum, and the UI says "across N model turns". Worst-case wall time is the
+first turn's 20 minutes plus 8 per extra turn.
+
+The figure beside coverage reads "core parts taught: 3/3 · rubric avg 4.2/5".
+The data-only and local tiers write no prose to grade and are not checked.
 
 ---
 
@@ -478,6 +687,19 @@ the design and code documents free to assume the reader already knew every term
 they used. The reader who asks for a design document is precisely the reader who
 does not yet know why anyone would choose one of these things over another.
 
+**`coverageBlock(kind, brief)`** is the fourth shared block: the coverage
+requirement (§3d, §4.7) and the map's ids as a checklist. Depth follows
+importance: a **core** part is taught in full in its own section (for
+onboarding: what it does, how it works, why it is built that way and what that
+costs, how it connects; for design: the decisions that shaped it, each marked
+stated, inferred or unknown; for code: the constructs and libraries it uses,
+with real quoted snippets); a **supporting** part gets a paragraph or a short
+sub-section; **minor** parts get at least a real sentence each, collected in one
+"the rest of the project" table. The block is explicit that this is not a
+licence for an inventory, and that the decision cards, prose-run limits,
+predict-then-read blocks and evidence rules all still apply inside a part's
+section. `PREFLIGHT` gained a ninth count: every id marked.
+
 **`PREFLIGHT`** is a count-before-you-emit checklist: how many diagrams, how many
 decision cards, the longest run of consecutive paragraphs, the longest
 paragraph, whether every section has a non-prose element. Every item in it was
@@ -589,8 +811,12 @@ tier and the **onboarding** kind's safety net; there is no design-kind
 equivalent, and none is to be built (§0). Include: title and one-line identity; a stat band
 (files, size, commits, languages, last activity); a language composition bar; a
 90-day commit heatmap; the document index; entry points and run commands; the
-directory map; recent commits; TODO samples; and an honest "what we could not
-determine automatically" note. Escape every interpolated value: repository
+directory map; **every part on the coverage map** (§3d), one row each with its
+evidence description and its `data-part` marker, minor rows folded when the
+list is long; recent commits; TODO samples; and an honest "what we could not
+determine automatically" note. The coverage table is `coverageTable(parts)` in
+`lib/artifact-parts.js`, shared with the generator's listing of skipped parts
+(§4.7), so the no-model tier addresses every part of the project too. Escape every interpolated value: repository
 content is untrusted.
 
 `lib/artifact-parts.js` holds the shared HTML/SVG builders (stat band,

@@ -1990,7 +1990,11 @@ function usageSentence(job) {
   const c = job && job.costUsd;
   if (typeof c !== 'number' || !isFinite(c) || c <= 0) return null;
   const amount = c < 0.01 ? '<$0.01' : '~$' + c.toFixed(2);
-  return amount + ' of list-price usage: counts toward your Claude subscription, not billed separately.';
+  // The checking turns (repair, review, re-review) are part of the figure, so
+  // say how many there were rather than let them look like the writing.
+  const turns = Array.isArray(job.turns) ? job.turns.length : 0;
+  const across = turns > 1 ? ' across ' + turns + ' model turns (' + (turns - 1) + ' for repair and review)' : '';
+  return amount + ' of list-price usage' + across + ': counts toward your Claude subscription, not billed separately.';
 }
 
 const previewUrl = (jobId) => '/api/forge/job/' + encodeURIComponent(jobId) + '/preview';
@@ -2680,6 +2684,65 @@ function shapeSentence(job) {
   return wrap;
 }
 
+/**
+ * How much of the project the document addresses (CONTRACT-FORGE.md §4.7).
+ *
+ * A document can read well and still skip the one module you needed, and
+ * nothing about its length or its diagrams would tell you. This is the count
+ * of parts on the brief's coverage map that the document actually addressed,
+ * with the ones Ground Control had to list from facts called out separately,
+ * because "listed" and "taught" are not the same promise.
+ */
+function coverageSentence(job) {
+  const c = job && job.coverage;
+  if (!c || !c.total) return null;
+  const wrap = h('span', 'forge-tag');
+  const listed = (c.listed || []).length;
+  if (c.mode === 'listed') {
+    wrap.textContent = c.covered + ' of ' + c.total + ' parts listed';
+    wrap.title = 'The data-only page names and describes every part of the project from repository '
+      + 'facts. It cannot teach how any of them works.';
+    return wrap;
+  }
+  wrap.textContent = c.covered + ' of ' + c.total + ' parts covered'
+    + (listed ? ' \u00b7 ' + listed + ' listed from facts' : '');
+  const core = c.core || {};
+  const bits = [(core.covered || 0) + ' of ' + (core.total || 0) + ' core parts taught'];
+  if (c.repaired) bits.push('the missing parts were asked for in a second turn');
+  if (listed) {
+    wrap.classList.add('is-thin');
+    bits.push(listed + ' part(s) the author skipped are listed from repository facts at the end of the page');
+  }
+  wrap.title = bits.join('; ') + '.';
+  return wrap;
+}
+
+/**
+ * Whether the parts are taught, not only covered (CONTRACT-FORGE.md §4.8):
+ * how many core parts passed the deterministic checks and the rubric review,
+ * and the rubric's average. The tooltip names what any failing part lacks.
+ */
+function teachingSentence(job) {
+  const t = job && job.teaching;
+  if (!t || !t.core || !t.core.total) return null;
+  const wrap = h('span', 'forge-tag');
+  const r = t.rubric || {};
+  wrap.textContent = 'core parts taught: ' + t.core.passed + '/' + t.core.total
+    + (r.status === 'ok' && typeof r.avg === 'number' ? ' · rubric avg ' + r.avg.toFixed(1) + '/5'
+      : r.status === 'unavailable' ? ' · rubric unavailable' : '');
+  const weak = (t.parts || []).filter((p) => !p.pass);
+  if (weak.length) wrap.classList.add('is-thin');
+  const bits = [];
+  if (t.supporting && t.supporting.total) bits.push('supporting parts taught: ' + t.supporting.passed + '/' + t.supporting.total);
+  if ((t.rewritten || []).length) bits.push((t.rewritten || []).length + ' part(s) rewritten after review');
+  for (const p of weak.slice(0, 6)) {
+    bits.push(p.path + ': ' + ((p.checks && p.checks.missing.length) ? 'lacks ' + p.checks.missing.join(', ') : 'below the rubric'));
+  }
+  if (r.status === 'unavailable' && r.reason) bits.push('rubric review: ' + r.reason);
+  wrap.title = bits.join('; ') || 'Every graded part passed the teaching checks and the rubric.';
+  return wrap;
+}
+
 function paintForgeMeta(st) {
   if (!st.els || !st.els.meta) return;
   const meta = st.els.meta;
@@ -2739,6 +2802,10 @@ function paintForgeDone(st, box) {
 
   const shape = shapeSentence(job);
   if (shape) facts.append(shape);
+  const coverage = coverageSentence(job);
+  if (coverage) facts.append(coverage);
+  const teaching = teachingSentence(job);
+  if (teaching) facts.append(teaching);
 
   const usage = usageSentence(job);
   if (usage) box.append(forgeNote('i-check', usage, 'is-quiet'));
