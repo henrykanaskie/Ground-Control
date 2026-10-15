@@ -6930,12 +6930,15 @@ function runPanel(d) {
   Promise.all([
     getJSON('/api/run/' + id + '/plan').catch((err) => { rn.planError = err.message || 'unavailable'; return null; }),
     getJSON('/api/run/' + id).catch(() => ({ run: null })),
+    // Whether an agent exists decides which buttons the panel shows, so it is
+    // known before the first paint rather than discovered after it.
+    loadCommsStatus().catch(() => null),
   ]).then(([plan, cur]) => {
     if (rnStale()) return;
     rn.plan = plan;
     rn.run = cur && cur.run;
     rnPaint();
-    if (rnActive(rn.run)) rnOpenStream();
+    rnOpenStream();
   });
   return p;
 }
@@ -7191,7 +7194,14 @@ function rnPaintRun(body, run) {
       ask.title = 'A chat agent edits the project to fix this, then Run starts it again by itself, up to 3 attempts.';
       ask.addEventListener('click', () => rnAgent(ask));
       dg.append(ask);
+    } else if ((d.needs || 'agent') === 'agent') {
+      // Never a silently missing button: say why there is no agent to fix it.
+      const st = cm.status || {};
+      dg.append(h('p', 'rn-hint', 'No agent can fix this here: '
+        + (st.unavailable ? 'the chat service is not reachable (' + st.unavailable + ').'
+          : 'Ground Control cannot find the `claude` command. Install Claude Code, or if it is installed, quit and reopen Ground Control so it looks again.')));
     }
+    dg.append(rnCopyButton(run));
     body.append(dg);
   }
 
@@ -7237,7 +7247,8 @@ function rnStart(opts) {
   cmPost('/api/run/' + encodeURIComponent(projectId) + '/start', {
     choices: rn.choices.get(projectId) || {},
     open: rnPref('open', true),
-    agent: rnPref('agent', false) && Boolean((cm.status || {}).available),
+    // The server checks whether an agent exists; the browser only says what you asked for.
+    agent: rnPref('agent', false),
     install: opts && opts.install ? opts.install : undefined,
   })
     .then((r) => {
@@ -7268,6 +7279,48 @@ function rnRefreshPlan() {
   getJSON('/api/run/' + encodeURIComponent(rn.projectId) + '/plan')
     .then((plan) => { if (!rnStale()) { rn.plan = plan; rnPaint(); } })
     .catch(() => {});
+}
+
+/** Everything about this run that someone helping would need, as plain text. */
+function rnDetailsText(run) {
+  const d = run.diagnosis || {};
+  return [
+    `Ground Control Run: ${run.state}` + (d.title ? ` — ${d.title} (${d.needs || 'agent'})` : ''),
+    d.detail ? 'Detail: ' + d.detail : '',
+    d.hint ? 'Hint: ' + d.hint : '',
+    run.agent ? `Agent: ${run.agent.state}, attempt ${run.agent.round} of ${run.agent.maxRounds}${run.agent.note ? ' — ' + run.agent.note : ''}` : '',
+    'Agent available: ' + Boolean((cm.status || {}).available),
+    '',
+    'Steps:',
+    ...(run.steps || []).map((s) => `  ${s.state.padEnd(8)} ${s.label}: ${s.command}${s.exitCode != null ? ' (exit ' + s.exitCode + ')' : ''}`),
+    ...(run.fixes || []).map((f) => `Fixed automatically: ${f.title}. ${f.action}`),
+    '',
+    'Last output:',
+    ...(run.log || []).slice(-40).map((e) => (e.t === 'sys' ? '» ' : '  ') + e.l),
+  ].filter((l) => l !== '').join('\n')
+    .replace(/((?:api[_-]?key|token|secret|password)[\w-]*\s*[=:]\s*)["']?[^\s"']+/gi, '$1•••');
+}
+
+function rnCopyButton(run) {
+  const b = h('button', 'btn btn-ghost btn-sm rn-copy');
+  b.type = 'button';
+  b.append(icon('i-doc'), h('span', null, 'Copy details'));
+  b.title = 'Copies the diagnosis, the steps and the end of the log, to paste to whoever is helping. Values that look like keys are masked.';
+  b.addEventListener('click', () => {
+    const text = rnDetailsText(run);
+    const done = () => { b.querySelector('span').textContent = 'Copied'; setTimeout(() => { if (b.isConnected) b.querySelector('span').textContent = 'Copy details'; }, 1800); };
+    const fallback = () => {
+      // No clipboard access (some app views refuse it): show the text, selected.
+      const ta = h('textarea', 'rn-copytext mono');
+      ta.value = text;
+      ta.readOnly = true;
+      b.replaceWith(ta);
+      ta.focus();
+      ta.select();
+    };
+    try { navigator.clipboard.writeText(text).then(done, fallback); } catch { fallback(); }
+  });
+  return b;
 }
 
 /** Hand the failure to the agent loop: it fixes, then Run re-runs by itself. */
@@ -7313,8 +7366,8 @@ function rnOpenStream(fresh) {
     const log = rn.run && rn.run.id === data.run.id ? rn.run.log : [];
     rn.run = Object.assign({}, data.run, { log });
     rnPaint();
-    const ag = rn.run.agent;
-    if (!rnActive(rn.run) && !(ag && (ag.state === 'fixing' || ag.state === 'rerunning'))) rnCloseStream();
+    // The stream stays open after a run ends: an agent can pick the failure up
+    // a moment later and re-run it, and that news has to reach this panel.
   });
   /* Log lines arrive several times a second while installing: append them to
    * the open log rather than repainting the panel. */
@@ -7341,7 +7394,6 @@ function rnOpenStream(fresh) {
   src.addEventListener('error', () => {
     if (!mine()) return;
     rnCloseStream();
-    if (!rnActive(rn.run)) return;
     const wait = RN_BACKOFF[Math.min(rn.esAttempt, RN_BACKOFF.length - 1)];
     rn.esAttempt += 1;
     rn.esTimer = setTimeout(() => { if (!rnStale()) rnOpenStream(true); }, wait);

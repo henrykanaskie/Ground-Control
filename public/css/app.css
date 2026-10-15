@@ -2228,3 +2228,5 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 .rn-input input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .rn-line.is-in{color:var(--accent-soft)}
 @media (prefers-reduced-motion:reduce){.rn-agent .icon{animation:none!important}}
+.rn-copy{margin-left:6px}
+.rn-copytext{display:block;width:100%;min-height:160px;margin-top:10px;padding:8px;font-size:11px;color:var(--text);background:var(--bg);border:1px solid var(--line-2);border-radius:var(--radius-xs)}
