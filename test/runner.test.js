@@ -124,6 +124,18 @@ test('a missing tool is reported before anything runs', async () => {
   assert.match(plan.checks[0].text, /definitely-not-a-real-tool-gc/);
 });
 
+test('a port held on every address counts as in use, and is never offered as free', async () => {
+  const holder = net.createServer();
+  const port = await new Promise((r) => holder.listen(0, () => r(holder.address().port)));
+  try {
+    assert.equal(await runner._internals().portInUse(port), true, 'a wildcard listener must be seen on macOS too');
+    const free = await runner._internals().freePort(port);
+    assert.notEqual(free, port);
+  } finally {
+    holder.close();
+  }
+});
+
 /* ---- diagnosis ----------------------------------------------------- */
 
 test('diagnose: the failures with a known cure are recognised', () => {
@@ -158,7 +170,9 @@ http.createServer((q,r)=>r.end('ok')).listen(port,()=>console.log('ready at http
 
 test('a busy port is moved without anyone typing, the address is found, and Stop ends it', async () => {
   const blocker = net.createServer();
-  const busy = await new Promise((r) => blocker.listen(0, '127.0.0.1', () => r(blocker.address().port)));
+  // The wildcard address, the way a real dev server binds: a blocker on
+  // 127.0.0.1 alone does not stop the app binding the port on macOS.
+  const busy = await new Promise((r) => blocker.listen(0, () => r(blocker.address().port)));
   const root = fixtureRoot('rn-port');
   const dir = project(root, 'srv', { files: {
     'package.json': JSON.stringify({ name: 'srv', scripts: { dev: 'node server.js' } }),
