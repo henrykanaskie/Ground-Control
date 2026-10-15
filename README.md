@@ -205,6 +205,48 @@ session transcripts. It **observes only**: it never signals or kills an agent,
 never writes anything under `~/.claude`, and surfaces short status labels rather
 than your conversations.
 
+## Run: one button that gets a project going
+
+Every project page opens with a **Run project** button. Ground Control reads the
+folder, works out every command it takes to start it, shows you that list, and
+when you press the button runs all of it in order: no terminal.
+
+What it plans comes from the project's own files:
+
+- **Node**: the package manager from the lockfile (npm, pnpm, yarn, bun), an
+  install only when `node_modules` is missing or older than `package.json`, then
+  the `dev` script (or `start`, `serve`, …; pick another from the dropdown).
+- **Python**: a `.venv` if there is none, the requirements installed *into it*
+  (never into your system Python), then `manage.py runserver`, `uvicorn` for a
+  FastAPI app, `flask run`, `streamlit run`, or `python main.py`.
+- **Rust, Go, Swift, Deno, Ruby/Rails, Make, Docker Compose, Xcode**, and a
+  plain `index.html`, each with its usual command. A Makefile `run`/`dev`
+  target counts as the author telling you how they run it.
+- A `frontend/` + `backend/` layout with nothing at the root runs both side by
+  side. A missing `.env` is copied from `.env.example` (never overwritten).
+
+Before anything runs it checks what it can: that every tool is installed (and
+where to get it if not), that the Node version is the one `engines` asks for,
+whether the port is already taken. It looks for tools where your shell would,
+so nvm, pyenv, Homebrew and cargo installs are found even from the macOS app.
+
+While it runs you get each step's progress, the live output, and a button for
+the address the app came up on. When a step fails it reads the output and
+**fixes the problems that have a known cure, then retries**: a busy port moves
+to a free one, a missing package triggers an install, an npm peer-dependency
+conflict retries with `--legacy-peer-deps`, a missing Python module is
+installed into the virtualenv. Each cure is tried at most once, and four in a
+run at most, so it never loops. Anything it can't cure (a database that isn't
+running, an unset environment variable, a wrong Node version) ends with a plain
+sentence saying what is wrong and how to fix it, plus **Ask an agent to fix
+it**, which hands the log to a Comms chat in that project.
+
+A run keeps going when you leave the page. Stop takes down the whole process
+tree, quitting Ground Control stops every run, and a server that was `kill -9`ed
+stops the dev servers it left behind on its next start. Like Comms, every Run
+route is loopback-only, the folder comes from the scan, and the request can only
+choose *which* detected command to use, never supply one.
+
 ## Comms: talking to a project
 
 Every project page has a chat. Type a message and an agent starts in that
@@ -261,7 +303,7 @@ delete and no keyboard shortcut. Every removal is logged to
 ## Tests
 
 ```bash
-npm test          # 99 tests, ~5s, no dependencies
+npm test          # 143 tests, ~10s, no dependencies
 ```
 
 Node's built-in runner: no framework, nothing to install. The suite is
@@ -312,6 +354,7 @@ lib/artifact-*.js       the deterministic artifact and its components
 lib/agents.js           running-agent detection, transcript tails
 lib/editors.js          editor detection and launching
 lib/comms.js            per-project chats: the `claude` turn, streaming, the registry
+lib/runner.js           Run: detecting how to start a project, running it, troubleshooting
 lib/reclaim.js          candidate scoring, safety blockers, trash
 public/js/app.js        routing, grid, detail, reader, every feature's UI
 public/js/markdown.js   from-scratch markdown renderer + highlighting
@@ -333,8 +376,11 @@ CONTRACT*.md            the specs the build agents worked against
 - One broken project cannot fail a scan.
 - Ground Control is read-only over your projects except where you ask otherwise:
   saving a generated artifact and moving a folder to Trash are both explicitly
-  confirmed, and a **Comms chat is a full agent** that edits files and runs
-  commands in the one project you opened it on. Everything else, scanning,
+  confirmed, a **Comms chat is a full agent** that edits files and runs
+  commands in the one project you opened it on, and **Run** executes the
+  project's own commands there (installing into `node_modules` or `.venv`, and
+  copying `.env.example` when there is no `.env`), every step listed before you
+  press the button. Everything else, scanning,
   Forge, Reclaim's scoring, the Workbench, only reads. Adding and removing
   watched folders writes only to `~/.ground-control/sources.json`, and chats
   are indexed in `~/.ground-control/comms.json`.
@@ -345,6 +391,7 @@ CONTRACT*.md            the specs the build agents worked against
 `GET /api/stream` · `GET/POST /api/forge/*` · `GET /api/editors` ·
 `POST /api/open` · `GET /api/agents[/:id]` · `GET /api/reclaim[/:id]` ·
 `POST /api/reclaim/:id/trash` · `GET/POST/DELETE /api/comms/*` ·
+`GET /api/run/:id[/plan|/stream|/tail]` · `POST /api/run/:id/{start,stop}` ·
 `GET/POST /api/sources` ·
 `DELETE /api/sources/:id` · `POST /api/sources/{inspect,locate,reorder}` ·
 `GET /api/browse` · `POST /api/pick-folder`
