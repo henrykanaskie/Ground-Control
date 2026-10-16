@@ -10,8 +10,12 @@
  *   a review turn (the prompt carries the review title)   FAKE_REVIEW, then FAKE_REVIEW2
  *                                                         (default: every listed part 5/5)
  *   a resumed turn asking for parts to be taught again     FAKE_TEACH
+ *   a resumed turn asking for the whole document again     FAKE_WHOLE
  *   any other resumed turn (the coverage repair)           FAKE_REPAIR
- *   the first turn                                         FAKE_FIRST
+ *   the first turn (and a fresh retry of it)               FAKE_FIRST
+ *
+ * FAKE_FIRST_FAILS=n makes the first n fresh turns exit 1; FAKE_LIMIT=1 makes
+ * every turn report a usage limit.
  *
  * Every prompt is appended to FAKE_LOG under a `=== KIND ===` header.
  */
@@ -107,8 +111,17 @@ process.stdin.on('end', () => {
   const resume = argv.includes('--resume');
   const isReview = input.includes(process.env.FAKE_REVIEW_TITLE);
   const isTeach = resume && input.includes('not yet taught well enough');
-  const kind = isReview ? 'REVIEW' : isTeach ? 'TEACH' : resume ? 'REPAIR' : 'FIRST';
+  const isWhole = resume && input.includes('cannot be used as it is');
+  const kind = isReview ? 'REVIEW' : isTeach ? 'TEACH' : isWhole ? 'WHOLE' : resume ? 'REPAIR' : 'FIRST';
   fs.appendFileSync(process.env.FAKE_LOG, '=== ' + kind + ' ===\n' + input + '\n');
+  const firsts = (fs.readFileSync(process.env.FAKE_LOG, 'utf8').match(/=== FIRST ===/g) || []).length;
+  if (process.env.FAKE_LIMIT === '1') {
+    console.log(JSON.stringify({ type: 'result', subtype: 'error', is_error: true, result: 'Claude usage limit reached. Your limit will reset at 5pm.', session_id: 's', total_cost_usd: 0, duration_ms: 1 }));
+    process.exit(1);
+  }
+  if (kind === 'FIRST' && firsts <= Number(process.env.FAKE_FIRST_FAILS || 0)) {
+    console.error('transient failure'); process.exit(1);
+  }
   let out = '';
   const read = (f) => (f && fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : null);
   if (isReview) {
@@ -119,7 +132,7 @@ process.stdin.on('end', () => {
       out = JSON.stringify({ parts: ids.map((id) => ({ id, scores: { accurate: 5, why: 5, followable: 5, connected: 5 }, problems: [] })) });
     }
   } else {
-    out = read(isTeach ? process.env.FAKE_TEACH : resume ? process.env.FAKE_REPAIR : process.env.FAKE_FIRST) || '';
+    out = read(isTeach ? process.env.FAKE_TEACH : isWhole ? process.env.FAKE_WHOLE : resume ? process.env.FAKE_REPAIR : process.env.FAKE_FIRST) || '';
   }
   const sid = 'sess-fake-1';
   console.log(JSON.stringify({ type: 'system', subtype: 'init', session_id: sid, model: 'fake' }));
@@ -145,10 +158,12 @@ export function installFakeClaude() {
 export async function generate(brief, proj, answers) {
   const dir = fixtureRoot('forge');
   const env = { FAKE_LOG: path.join(dir, 'prompts.log') };
-  for (const [k, file] of [['first', 'FAKE_FIRST'], ['repair', 'FAKE_REPAIR'], ['teach', 'FAKE_TEACH'], ['review', 'FAKE_REVIEW'], ['review2', 'FAKE_REVIEW2']]) {
+  for (const [k, file] of [['first', 'FAKE_FIRST'], ['repair', 'FAKE_REPAIR'], ['teach', 'FAKE_TEACH'], ['whole', 'FAKE_WHOLE'], ['review', 'FAKE_REVIEW'], ['review2', 'FAKE_REVIEW2']]) {
     env[file] = path.join(dir, `${k}.txt`);
     if (answers[k] != null) fs.writeFileSync(env[file], answers[k]);
   }
+  env.FAKE_FIRST_FAILS = String(answers.firstFails || 0);
+  env.FAKE_LIMIT = answers.limit ? '1' : '0';
   Object.assign(process.env, env);
 
   const jobId = jobs.newJobId();

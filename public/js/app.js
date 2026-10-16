@@ -2814,6 +2814,22 @@ function paintForgeDone(st, box) {
   const usage = usageSentence(job);
   if (usage) box.append(forgeNote('i-check', usage, 'is-quiet'));
 
+  // Never a silent shortfall: a page built from facts says why, and anything
+  // the repair rounds could not fix is named here and at the top of the page.
+  if (job.fallback) {
+    box.append(forgeNote('i-alert', 'Built from repository facts instead of written by the model: ' + job.fallback.reason));
+  } else if ((job.issues || []).length) {
+    box.append(forgeNote('i-alert', (job.issues.length === 1 ? 'One thing' : job.issues.length + ' things')
+      + ' could not be fixed after repeated repair rounds, and ' + (job.issues.length === 1 ? 'is' : 'are')
+      + ' named at the top of the page: ' + job.issues.join(' ')));
+  }
+  const repairKinds = [...new Set((job.turns || []).map((t) => t.purpose).filter((p) => p !== 'write' && p !== 'review'))];
+  if (repairKinds.length && !job.fallback) {
+    const n = (job.turns || []).filter((t) => t.purpose !== 'write' && t.purpose !== 'review').length;
+    box.append(forgeNote('i-check', 'Fixed as it went: ' + n + ' repair turn' + (n === 1 ? '' : 's')
+      + ' in the same session (' + repairKinds.join(', ') + ').', 'is-quiet'));
+  }
+
   // The local tier reports what it drafted and what verification removed. No
   // money figure: there isn't one (CONTRACT-LOCAL.md §5).
   if (job.tier === 'local') {

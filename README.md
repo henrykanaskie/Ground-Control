@@ -182,10 +182,10 @@ you have made a guess.
 And Forge now counts. Every finished artifact is measured (words, reading time,
 diagrams, decision cards, folds, reveals, longest paragraph, longest unbroken
 run of prose), the numbers are shown next to its size, and a document of 1500
-words or more with **no diagram and no decision anywhere in it** is refused
-rather than staged. The prompts had asked for diagrams since the beginning; a
-real artifact still came out at 3810 words with zero. Asking harder is not a
-mechanism.
+words or more with **no diagram and no decision anywhere in it** goes back to
+the same session to be reworked. The prompts had asked for diagrams since the
+beginning; a real artifact still came out at 3810 words with zero. Asking
+harder is not a mechanism; measuring and sending it back is.
 
 The same goes for **covering the whole project**. A document can read well and
 still never mention the one module you needed. So the brief derives a
@@ -197,11 +197,10 @@ themselves. Depth follows importance: **core** parts are taught in full,
 **supporting** parts get a paragraph, **minor** parts a sentence each in one
 "rest of the project" table, so full coverage does not turn into a file list.
 Every part's treatment carries a `data-part` marker, and Forge counts them. A
-document that skips parts gets one follow-up turn in the same session asking
-for exactly those; after that it is refused if a core part is still untaught
-or under 80% of the parts are addressed, and any minor part still missing is
-listed from repository facts at the end of the page rather than left out
-silently. The data-only artifact lists every part too. The figure ("23 of 24
+document that skips parts is asked for exactly those, in up to three rounds in
+the same session, for as long as each round adds something; any part still
+missing after that is listed from repository facts at the end of the page
+rather than left out silently. The data-only artifact lists every part too. The figure ("23 of 24
 parts covered") sits next to the reading time.
 
 Covered is not the same as **taught**, so each core part is then checked for
@@ -216,12 +215,25 @@ explains why, a newcomer could follow it, connects to the rest; 1-5 each, a
 pass needs no score below 3 and a mean of 3.5). Its JSON answer is untrusted
 and parsed defensively. Whatever fails either goes back through one repair
 turn naming the specific problems, rewritten sections replace the old ones
-only where they measurably improve, rewritten parts are re-reviewed once, and
-a core part that still fails refuses the document. That is at most four
-extra turns, all of them in the usage figure; a document that is right first
-time costs one (the review). The result reads "core parts taught: 3/3 ·
+only where they measurably improve, and rewritten parts are re-reviewed, for
+up to three rounds while they keep improving. All of it is bounded (14 extra
+turns and an hour at most) and in the usage figure; a document that is right
+first time costs one (the review). The result reads "core parts taught: 3/3 ·
 rubric avg 4.2/5". Only program code can be core: stylesheets, markup,
 generated, vendored and lock files never are.
+
+**Forge fixes as it goes; it does not fail over something it could fix.**
+Mechanical defects (a missing title or stylesheet, a link to a remote script
+or font) are repaired without the model. An unusable answer, a wall of prose,
+skipped parts and weak teaching each go back to the same session, round after
+round, and a round is kept only if it measurably helps. A first turn that runs
+out of time is asked to finish instead of being thrown away; a CLI that exits
+with an error is retried once. Whatever is still short after the rounds is
+named in a box at the top of the page and beside the result, never turned
+into a failed job. And when no model can produce a page at all (no `claude`,
+a usage limit, a crash twice over), you still get the data-only page built
+from repository facts, saying why. A job fails only if even that cannot be
+built.
 
 Generated artifacts go to a `.forge/` staging area. **Saving into a project is a
 separate, explicitly confirmed action**, and it refuses to overwrite an existing
@@ -348,7 +360,7 @@ delete and no keyboard shortcut. Every removal is logged to
 ## Tests
 
 ```bash
-npm test          # 200 tests, ~20s, no dependencies
+npm test          # 205 tests, ~20s, no dependencies
 ```
 
 Node's built-in runner: no framework, nothing to install. The suite is
@@ -378,15 +390,19 @@ toward coverage percentage:
   a fixture repository exactly once and stays bounded on a sprawling one, that
   a skipped part is detected, that a core part named in a single table row
   does not count as taught, and, against a fake `claude` CLI, that a skipped
-  part is asked for in a second turn, that a still-missing core part refuses
-  the document, and that a missing minor part is listed rather than dropped.
+  part is asked for again in bounded rounds, that a part never supplied ships
+  named at the top of the page and listed from facts, and that a missing minor
+  part is listed rather than dropped.
 - **Forge's teaching gate**: that a core part with no trade-off, no connection
   or no question for the learner fails, that an invented identifier or path
   fails grounding while an alternative inside a decision card does not, that
   malformed or markup-laden rubric JSON is handled without ever reaching the
-  page, and, against the fake CLI, that a failing part gets exactly one repair
-  and is re-measured, that a rubric failure is re-reviewed, that a core part
-  still failing refuses the document, and that a stylesheet is never core.
+  page, and, against the fake CLI, that a failing part is repaired and
+  re-measured in bounded rounds, that a rubric failure is re-reviewed, that a
+  part still failing ships with the shortfall named, that remote references and
+  a missing title are fixed without the model, that an unusable answer, a
+  failed CLI run and a usage limit all still end with a document, and that a
+  stylesheet is never core.
 - **Regressions from real bugs**: a root README losing to a nested `CLAUDE.md`;
   `#StockPortfolio` with no space leaking in as a blurb; virtualenv bulk counting
   as meaningful content; and a live agent process being reported as *working*

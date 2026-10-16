@@ -19,7 +19,7 @@ import { coverageTable } from '../lib/artifact-parts.js';
 import { authoringPrompt, designPrompt, codePrompt } from '../lib/house-style.js';
 import {
   measureCoverage, validateCoverage, coverageAppendix, spliceIntoMain, cleanFragment, repairPrompt,
-  claudeAvailable,
+  claudeAvailable, COVERAGE_ROUNDS,
 } from '../lib/generate.js';
 import { code, DEMO, briefFor, page, teach, installFakeClaude, generate } from './forge-fake.js';
 
@@ -236,16 +236,17 @@ test('a skipped part is asked for in a second turn of the same session, and spli
   assert.equal(Math.round(job.costUsd * 100), job.turns.length);
 });
 
-test('a core part still missing after the repair turn refuses the document', async () => {
+test('a core part the session never supplies is asked for in rounds, then the page ships naming it', async () => {
   const { brief, project: proj } = await briefFor(DEMO);
   const parts = brief.coverageMap.parts;
   const core = parts.find((p) => p.importance === 'core');
 
-  const { job } = await generate(brief, proj, { first: page(teach(parts, [core.id])), repair: 'I could not do that.' });
-  assert.equal(job.state, 'failed');
-  assert.equal(job.errorKind, 'incomplete-coverage');
-  assert.ok(job.error.includes(core.path), `the refusal does not name the part: ${job.error}`);
-  assert.equal(job.coverage.repaired, false);
+  const { job, staged, count } = await generate(brief, proj, { first: page(teach(parts, [core.id])), repair: 'I could not do that.' });
+  assert.equal(job.state, 'done', 'a shortcoming is fixed or named, never a failed job');
+  assert.ok(count('REPAIR') > 1 && count('REPAIR') <= COVERAGE_ROUNDS, `asked ${count('REPAIR')} times`);
+  assert.ok(job.issues.some((i) => i.includes(core.path)), `the issue does not name the part: ${job.issues}`);
+  assert.match(staged, /What Ground Control could not fix/);
+  assert.ok(job.coverage.listed.includes(core.id), 'the untaught part is still listed from facts');
 });
 
 test('a minor part the repair could not supply is listed from facts, and the page ships', async () => {

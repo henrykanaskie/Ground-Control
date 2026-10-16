@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 
 import { cleanupFixtures } from './helpers.js';
 import { teachingReport, parseReview, reviewPrompt, REVIEW_TITLE } from '../lib/teaching.js';
-import { MAX_EXTRA_TURNS, teachingRepairPrompt } from '../lib/generate.js';
+import { MAX_EXTRA_TURNS, TEACHING_ROUNDS, teachingRepairPrompt, repairMechanically, validateHtml } from '../lib/generate.js';
 import { authoringPrompt } from '../lib/house-style.js';
 import {
   code, DEMO, briefFor, page, section, teach, review, installFakeClaude, generate,
@@ -254,18 +254,34 @@ test('a part that fails a check gets one repair, is re-measured, and the page sh
   assert.ok(job.turns.length - 1 <= MAX_EXTRA_TURNS);
 });
 
-test('a core part still untaught after its repair refuses the document, naming what is missing', async () => {
+test('a core part still untaught after its repairs ships with the shortfall named, never a loop', async () => {
   const { brief, project: proj } = await briefFor(DEMO);
   const parts = brief.coverageMap.parts;
   const store = partNamed(brief, 'src-store-js');
   const weak = { [store.id]: ['trade-off'] };
 
-  const { job, count } = await generate(brief, proj, { first: page(teach(parts, [], weak)), teach: section(parts, store, ['trade-off']) });
-  assert.equal(job.state, 'failed');
-  assert.equal(job.errorKind, 'weak-teaching');
-  assert.match(job.error, /src\/store\.js lacks trade-off/);
-  assert.equal(count('TEACH'), 1, 'one repair, never a loop');
+  const { job, count, staged } = await generate(brief, proj, { first: page(teach(parts, [], weak)), teach: section(parts, store, ['trade-off']) });
+  assert.equal(job.state, 'done', 'a shortcoming is fixed or named, never a failed job');
+  assert.ok(job.issues.some((i) => /src\/store\.js lacks trade-off/.test(i)), String(job.issues));
+  assert.ok(count('TEACH') >= 2 && count('TEACH') <= TEACHING_ROUNDS, `asked ${count('TEACH')} times: it keeps trying, within a bound`);
+  assert.match(staged, /What Ground Control could not fix/);
   assert.equal(job.teaching.core.passed, job.teaching.core.total - 1);
+});
+
+test('a repair that lands on a later round is kept: it fixes as it goes', async () => {
+  const { brief, project: proj } = await briefFor(DEMO);
+  const parts = brief.coverageMap.parts;
+  const ids = parts.filter((p) => p.importance !== 'minor').map((p) => p.id);
+  const low = Object.fromEntries(ids.map((id) => [id, id === 'server-js' ? { accurate: 5, why: 2, followable: 5, connected: 5 } : 5]));
+  // The first re-review still finds it weak; the second rewrite passes.
+  const { job, count } = await generate(brief, proj, {
+    first: page(teach(parts)), review: review(low),
+    teach: section(parts, partNamed(brief, 'server-js')).replace('</section>', '<p class="body">Argued.</p></section>'),
+    review2: review({ 'server-js': 5 }),
+  });
+  assert.equal(job.state, 'done', job.error);
+  assert.deepEqual(job.issues, []);
+  assert.ok(count('TEACH') >= 1);
 });
 
 test('a rubric failure is repaired and re-reviewed, and the extra cost is counted', async () => {
@@ -303,9 +319,47 @@ test('a core part the reviewer still fails after its repair refuses the document
     teach: section(parts, partNamed(brief, 'server-js')),
     review2: review({ 'server-js': { accurate: 2, why: 5, followable: 5, connected: 5 } }),
   });
-  assert.equal(job.state, 'failed');
-  assert.equal(job.errorKind, 'weak-teaching');
-  assert.match(job.error, /server\.js reviewer scored accurate 2\/5/);
+  assert.equal(job.state, 'done', 'it ships, saying what is still weak');
+  assert.ok(job.issues.some((i) => /server\.js reviewer scored accurate 2\/5/.test(i)), String(job.issues));
+});
+
+/* ---- nothing that another turn could fix ends a job ------------------ */
+
+test('remote scripts, a missing title and a missing style are fixed without asking the model', () => {
+  const broken = `<!DOCTYPE html><html><head><script src="https://cdn.example.com/x.js"></script><link rel="stylesheet" href="https://fonts.example.com/a.css"></head>`
+    + `<body><main><img src="https://example.com/a.png" alt="diagram">${'<p>text</p>'.repeat(300)}</main></body></html>`;
+  assert.equal(validateHtml(broken).ok, false);
+  const fixed = repairMechanically(broken, { name: 'demo' });
+  assert.equal(validateHtml(fixed).ok, true, validateHtml(fixed).reason);
+  assert.ok(!/https?:\/\//.test(fixed.replace(/<p>text<\/p>/g, '')), 'a remote reference survived');
+  assert.match(fixed, /<title>demo<\/title>/);
+  assert.match(fixed, /alt="diagram"/);
+});
+
+test('an unusable first answer is sent back to the same session, and its fix is used', async () => {
+  const { brief, project: proj } = await briefFor(DEMO);
+  const parts = brief.coverageMap.parts;
+  const { job, count } = await generate(brief, proj, { first: '<p>I wrote it but only the start</p>', whole: page(teach(parts)) });
+  assert.equal(job.state, 'done', job.error);
+  assert.equal(count('WHOLE'), 1);
+  assert.ok(job.turns.some((t) => t.purpose === 'fix-document'));
+});
+
+test('a failed CLI run is retried once before anything else happens', async () => {
+  const { brief, project: proj } = await briefFor(DEMO);
+  const { job, count } = await generate(brief, proj, { first: page(teach(brief.coverageMap.parts)), firstFails: 1 });
+  assert.equal(job.state, 'done', job.error);
+  assert.equal(count('FIRST'), 2);
+  assert.ok(job.turns.some((t) => t.purpose === 'retry'));
+});
+
+test('a usage limit still ends with a document: the facts page, saying why', async () => {
+  const { brief, project: proj } = await briefFor(DEMO);
+  const { job, staged } = await generate(brief, proj, { first: page(teach(brief.coverageMap.parts)), limit: true });
+  assert.equal(job.state, 'done', job.error);
+  assert.ok(job.fallback && /limit/i.test(job.fallback.reason));
+  assert.match(staged, /What Ground Control could not fix/);
+  assert.equal(job.coverage.mode, 'listed');
 });
 
 test('a garbled or hostile review degrades to the deterministic checks, safely', async () => {

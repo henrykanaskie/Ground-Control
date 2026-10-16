@@ -875,6 +875,10 @@ function forgeJobJSON(job) {
   // turn the job ran, so the usage figure can say what it paid for.
   if (out && job && job.teaching) out.teaching = job.teaching;
   if (out && job && Array.isArray(job.turns)) out.turns = job.turns;
+  // What could not be fixed automatically, and whether the page had to be
+  // built from facts: said beside the result rather than as a failure.
+  if (out && job && Array.isArray(job.issues)) out.issues = job.issues;
+  if (out && job && job.fallback) out.fallback = job.fallback;
   return out;
 }
 

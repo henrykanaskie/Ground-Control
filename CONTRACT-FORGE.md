@@ -445,8 +445,11 @@ Then, in order:
    and kept only if the page still validates and coverage went up. Cancelling
    during the repair cancels the job; any other repair failure leaves the
    original to be gated as it was. Its usage is added to the job's.
-2. **Gate** (`validateCoverage`). The document is refused, errorKind
-   `incomplete-coverage`, with a reason naming the parts, in exactly two cases:
+2. **Gate** (`validateCoverage`). Superseded by §4.9: the repair is now up to
+   `COVERAGE_ROUNDS` (3) rounds while each adds coverage, and a gate failure
+   is no longer a refusal. It becomes an entry in `issues`, named at the top
+   of the page, and the parts are listed from facts. The gate still fires in
+   these two cases:
    - a **core** part is missing or thin, because a line of repository facts is
      no substitute for teaching the part a reader most needs; or
    - fewer than **80%** of all parts are addressed, because at that point the
@@ -470,7 +473,8 @@ repair.
 Coverage (§4.7) proves a part was mentioned at some length; fifty words that
 restate a file name pass it. So every covered core and supporting part is then
 checked for whether it is **taught**, deterministically first and by a
-reviewer second, and a core part that is not taught refuses the document.
+reviewer second, and a core part that is not taught is repaired in rounds and,
+if still short, named on the page (§4.9).
 
 **The deterministic checks** (`lib/teaching.js`, no model). Every element
 marked with the part's id counts, so a decision card marked with that id
@@ -529,12 +533,14 @@ rubric score, still passing every check. Parts rewritten for the rubric's sake
 are then **re-reviewed once**; with no fresh score, a stale score is not held
 against new text, and the part moves to `unscored`.
 
-**The gate** refuses with errorKind `weak-teaching` when any **core** part still
-fails its checks or its rubric, naming the part and what it lacks ("src/store.js
-lacks trade-off", "server.js reviewer scored accurate 2/5"). Supporting parts
-that fail are reported, not refused.
+**The gate** fires when any **core** part still fails its checks or its rubric
+after `TEACHING_ROUNDS` (3) rounds of repair and re-review, naming the part and
+what it lacks ("src/store.js lacks trade-off", "server.js reviewer scored
+accurate 2/5"). Since §4.9 that is an `issues` entry shown on the page, not a
+`weak-teaching` refusal. Supporting parts that fail are reported.
 
-**Turns and cost.** At most **4 extra turns** after the first (`MAX_EXTRA_TURNS`):
+**Turns and cost.** Originally at most 4 extra turns; since §4.9 at most
+**14** (`MAX_EXTRA_TURNS`) within an hour (`EXTRA_BUDGET_MS`):
 coverage repair, review, teaching repair, re-review, each only when needed, so
 a document that is right first time costs exactly one extra turn (the review).
 Each is recorded in `turns` with its own usage and duration, `costUsd` is
@@ -856,3 +862,32 @@ On the project detail view, a **Forge** panel:
 
 Follow `CONTRACT.md` §3 tokens and §5 conventions; the Forge panel must look
 native to the dashboard, not bolted on.
+
+
+### 4.9 Fix as it goes: no failure another turn could fix
+
+A shortcoming Forge can measure is something Forge repairs, not a reason to
+fail the job. In order:
+
+1. **First turn.** A timeout resumes the same session with a "finish now"
+   prompt (`FINISH_TIMEOUT_MS`); a non-zero exit or a model error is retried
+   once from the start. Spawn errors, a usage limit, and a second failure go to
+   step 6.
+2. **Mechanical repair** (`repairMechanically`): remote scripts and stylesheets
+   removed, remote media sources dropped (alt text kept), a missing `<title>`
+   or `<style>` inserted. No model involved.
+3. **Unusable HTML** still invalid after step 2 is sent back in the same
+   session for the whole corrected document, up to `WHOLE_ROUNDS` (2) times.
+   Still invalid: step 6.
+4. **Shape, coverage, teaching** (§4.6–4.8) are each repaired in rounds in the
+   same session. A round's result is kept only if it measurably helps, and two
+   rounds without progress stop that loop.
+5. **Ship.** Anything still short after its rounds becomes an entry in
+   `issues`, shown in a `aside.gc-known-gaps` at the top of `<main>` and
+   beside the result in the dashboard. State is `done`.
+6. **Facts page** (`stageFacts`): when the model cannot produce a usable page
+   at all, the data-only artifact is staged with the reason at the top, and
+   the job is `done` with `fallback: { reason }`. A job is `failed` only when
+   even this cannot be built, or on cancel and staging errors.
+
+The local tier follows step 6 for its own failures.
