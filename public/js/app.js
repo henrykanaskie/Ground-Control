@@ -1336,12 +1336,15 @@ function treePanel(d) {
 
 let mdModule = null;
 let mdPromise = null;
+let mathModule = null;
 
 function loadMarkdown() {
   if (mdModule) return Promise.resolve(mdModule);
   if (!mdPromise) {
     mdPromise = import('./markdown.js')
       .then((m) => { mdModule = m; return m; })
+      // Math in chat replies is typeset by math.js; markdown works without it.
+      .then((m) => import('./math.js').then((x) => { mathModule = x; return m; }, () => m))
       .catch((err) => { mdPromise = null; throw err; });
   }
   return mdPromise;
@@ -6316,6 +6319,7 @@ const cm = {
   active: new Map(),     // projectId -> chatId
   full: new Map(),       // chatId -> Chat (with turns)
   drafts: new Map(),     // chatId -> unsent text
+  openDid: new Set(),    // turn ids whose "what it did" list is open
   es: null,
   esChatId: null,
   esAttempt: 0,
@@ -6543,20 +6547,15 @@ function cmAgent(t) {
   if (t.durationMs) who.append(h('span', 'cm-dur', wbFmtUptime(t.durationMs)));
   m.append(who);
 
+  // What it did stays out of the way: one quiet line that opens to the list,
+  // above the answer. While it works, the line says what it is doing now.
   const steps = Array.isArray(t.steps) ? t.steps : [];
-  let run = null;                        // consecutive tool calls collapse into one strip
-  for (const s of steps) {
-    if (s.kind === 'tool') {
-      if (!run) { run = h('div', 'cm-tools'); m.append(run); }
-      const row = h('div', 'cm-tool' + (s.state === 'failed' ? ' is-bad' : ''));
-      row.append(h('span', 'cm-tname', s.name || 'tool'));
-      row.append(h('span', 'cm-tlabel', s.label || ''));
-      run.append(row);
-    } else {
-      run = null;
-      m.append(cmProse(s.text || ''));
-    }
-  }
+  const tools = steps.filter((s) => s.kind === 'tool');
+  if (tools.length) m.append(cmToolSummary(tools, t.state === 'running' && !t.partial, t.id));
+
+  // The prose reads as one answer, not fragments split around tool calls.
+  const prose = steps.filter((s) => s.kind !== 'tool').map((s) => String(s.text || '').trim()).filter(Boolean);
+  if (prose.length) m.append(cmProse(prose.join('\n\n')));
 
   if (t.partial) m.append(cmLive(t.partial));
   if (t.truncated) m.append(h('div', 'cm-note', 'Earlier steps in this turn were dropped to keep the panel light.'));
@@ -6570,6 +6569,62 @@ function cmAgent(t) {
   return m;
 }
 
+const CM_TOOL_KIND = {
+  Read: 'read', Glob: 'search', Grep: 'search', LS: 'read',
+  Edit: 'edit', Write: 'edit', MultiEdit: 'edit', NotebookEdit: 'edit',
+  Bash: 'run', WebFetch: 'web', WebSearch: 'web', Task: 'agent', Agent: 'agent',
+};
+const CM_KIND_WORDS = {
+  read: ['read a file', 'read {n} files'], search: ['searched once', 'searched {n} times'],
+  edit: ['edited a file', 'edited {n} files'], run: ['ran a command', 'ran {n} commands'],
+  web: ['looked something up', 'looked {n} things up'], agent: ['used a helper', 'used {n} helpers'],
+  other: ['one other step', '{n} other steps'],
+};
+
+/** "Read 4 files · edited 2 · ran 3 commands", folded; open it for the list. */
+function cmToolSummary(tools, live, turnId) {
+  const counts = new Map();
+  const edited = new Set();
+  for (const s of tools) {
+    const k = CM_TOOL_KIND[s.name] || (s.name === 'TodoWrite' ? null : 'other');
+    if (!k) continue;
+    if (k === 'edit') { edited.add(s.label); continue; }
+    counts.set(k, (counts.get(k) || 0) + 1);
+  }
+  if (edited.size) counts.set('edit', edited.size);
+  const order = ['edit', 'run', 'read', 'search', 'web', 'agent', 'other'];
+  const parts = order.filter((k) => counts.get(k)).map((k) => {
+    const n = counts.get(k);
+    return CM_KIND_WORDS[k][n === 1 ? 0 : 1].replace('{n}', n);
+  });
+  const failed = tools.filter((s) => s.state === 'failed').length;
+
+  const box = h('details', 'cm-did' + (live ? ' is-live' : '') + (failed ? ' has-bad' : ''));
+  // The panel repaints on every event, so an opened list remembers it was opened.
+  if (cm.openDid.has(turnId)) box.open = true;
+  box.addEventListener('toggle', () => { if (box.open) cm.openDid.add(turnId); else cm.openDid.delete(turnId); });
+  const sum = h('summary', 'cm-did-s');
+  const last = tools[tools.length - 1];
+  sum.append(h('span', 'cm-did-chev'));
+  if (live && last) {
+    sum.append(h('span', 'cm-did-now', (last.label || last.name || 'working') + '…'));
+  } else {
+    const text = parts.length ? parts.join(' · ') : 'worked';
+    sum.append(h('span', 'cm-did-t', text.charAt(0).toUpperCase() + text.slice(1)));
+  }
+  if (failed) sum.append(h('span', 'cm-did-bad', failed === 1 ? '1 failed' : failed + ' failed'));
+  box.append(sum);
+
+  const list = h('ol', 'cm-did-list');
+  for (const s of tools) {
+    const li = h('li', s.state === 'failed' ? 'is-bad' : null);
+    li.append(h('span', 'cm-tlabel', s.label || s.name || 'tool'));
+    list.append(li);
+  }
+  box.append(list);
+  return box;
+}
+
 /**
  * One block of the agent's prose. Markdown when the renderer is loaded, plain
  * wrapped text when it is not: an answer must never be lost to a missing
@@ -6581,8 +6636,13 @@ function cmProse(text) {
   if (mdModule) {
     // `ground-control-doc` gives lists, code blocks and tables the reader's
     // styling; `.cm-text` shrinks it back to chat size on top of that.
-    n.className = 'cm-text ground-control-doc';
-    try { n.innerHTML = mdModule.render(String(text)); return n; }
+    n.className = 'cm-text is-md';
+    try {
+      n.innerHTML = mathModule
+        ? mathModule.renderWithMath(String(text), (md) => mdModule.render(md))
+        : mdModule.render(String(text));
+      return n;
+    }
     catch { /* fall through to plain text */ }
   }
   n.className = 'cm-text is-plain';
@@ -6930,7 +6990,7 @@ const rn = {
 
 function rnStale() { return !rn.node || rn.token !== state.detailToken || !rn.node.isConnected; }
 
-function rnActive(run) { return run && (run.state === 'setup' || run.state === 'running'); }
+function rnActive(run) { return run && (run.state === 'setup' || run.state === 'running' || run.state === 'waiting'); }
 
 function runPanel(d) {
   const p = panel('Run this project', 'i-play', '');
@@ -6987,7 +7047,7 @@ function rnPaint() {
 
 function rnStateLabel(run) {
   const starting = run.urls && run.urls.length && !run.readyUrl;
-  return { setup: 'setting up', running: starting ? 'starting' : 'running', done: 'finished', failed: 'failed', stopped: 'stopped' }[run.state] || run.state;
+  return { setup: 'setting up', waiting: 'needs your answer', running: starting ? 'starting' : 'running', done: 'finished', failed: 'failed', stopped: 'stopped' }[run.state] || run.state;
 }
 
 /* Two per-viewer choices, remembered in this browser only. */
@@ -7012,44 +7072,83 @@ function rnToggle(key, fallback, label, title) {
 
 /* ── before a run: the plan ───────────────────────────────────────────── */
 
+/* What pressing Run ends with, said for the way this project is being run. */
+const RN_OUTCOME = {
+  app: 'Opens it as a desktop app, in its own window. Stop quits it.',
+  simulator: 'Builds it and opens it in a phone simulator. Stop quits it.',
+  browser: 'Starts it on this Mac and opens the page in your browser once it answers.',
+  terminal: 'Runs it right here. Its output, and any questions it asks, appear in this panel.',
+  editor: 'Opens the project in Xcode. Press Run there (⌘R) to start it.',
+  build: 'Builds it. Nothing is left running afterwards.',
+};
+const RN_GO = { app: 'Launch the app', simulator: 'Run in the Simulator', browser: 'Run and open', editor: 'Open in Xcode', build: 'Build it' };
+
+function rnChosen(svc, choices) {
+  const idx = Number.isInteger(choices[svc.id]) ? choices[svc.id] : svc.startIndex;
+  return { idx, start: svc.starts[idx] || svc.starts[0] };
+}
+
+function rnChoose(svc, idx) {
+  const c = Object.assign({}, rn.choices.get(rn.projectId) || {});
+  c[svc.id] = idx;
+  rn.choices.set(rn.projectId, c);
+  rnPaint();
+}
+
 function rnPaintPlan(body) {
   const plan = rn.plan;
   if (!plan) { body.append(h('div', 'panel-note', 'Working out how to run it…')); return; }
   const choices = rn.choices.get(rn.projectId) || {};
+  const autoInstall = rnPref('autoInstall', false);
 
-  if (plan.services.length) {
-    const intro = h('p', 'rn-intro', plan.services.length > 1
-      ? `Nothing at the top level starts this project, so it runs ${plan.services.length} parts side by side. Pressing Run does all of this for you:`
-      : 'Pressing Run does all of this for you, in order:');
-    body.append(intro);
+  if (plan.services.length > 1) {
+    body.append(h('p', 'rn-intro', `Nothing at the top level starts this project, so Run starts its ${plan.services.length} parts side by side:`));
   }
 
+  const modes = [];
   for (const svc of plan.services) {
-    const box = h('div', 'rn-svc');
+    const { idx, start } = rnChosen(svc, choices);
+    modes.push(start.mode);
+    const box = h('div', 'rn-svc is-' + start.mode);
     const head = h('div', 'rn-svc-h');
     head.append(h('strong', null, svc.dir ? svc.dir + '/' : svc.name), h('span', 'rn-stack', svc.stack));
     box.append(head);
-    const ol = h('ol', 'rn-steps');
-    for (const st of svc.setup) ol.append(rnPlanStep(st.label, st.command, st.why));
 
-    const idx = Number.isInteger(choices[svc.id]) ? choices[svc.id] : svc.startIndex;
-    const start = svc.starts[idx] || svc.starts[0];
-    const li = rnPlanStep('Start it', start.command, start.why);
-    if (svc.starts.length > 1) {
+    // The ways this can be run, by what you end up with: the app, the page in
+    // a browser, the output here. One click switches between them.
+    const byMode = new Map();
+    svc.starts.forEach((st, i) => { if (!byMode.has(st.mode)) byMode.set(st.mode, []); byMode.get(st.mode).push(i); });
+    if (byMode.size > 1) {
+      const seg = h('div', 'rn-modes');
+      seg.setAttribute('role', 'radiogroup');
+      seg.setAttribute('aria-label', 'How to run ' + (svc.dir || svc.name));
+      for (const [mode, list] of byMode) {
+        const b = h('button', 'rn-mode' + (mode === start.mode ? ' is-on' : ''), svc.starts[list[0]].modeLabel);
+        b.type = 'button';
+        b.setAttribute('role', 'radio');
+        b.setAttribute('aria-checked', String(mode === start.mode));
+        b.title = svc.starts[list[0]].why || '';
+        b.addEventListener('click', () => { if (mode !== start.mode) rnChoose(svc, list[0]); });
+        seg.append(b);
+      }
+      box.append(seg);
+    }
+    box.append(h('p', 'rn-outcome', RN_OUTCOME[start.mode] || RN_OUTCOME.terminal));
+
+    const ol = h('ol', 'rn-steps');
+    for (const st of svc.setup.concat(start.pre || [])) ol.append(rnPlanStep(st.label, st.command, st.why, st.consent && !autoInstall));
+    const li = rnPlanStep(start.mode === 'app' || start.mode === 'simulator' ? 'Launch it' : 'Start it', start.command, start.why);
+    const same = byMode.get(start.mode) || [];
+    if (same.length > 1) {
       const sel = h('select', 'rn-select');
       sel.setAttribute('aria-label', 'Start command');
-      svc.starts.forEach((s, i) => {
-        const o = h('option', null, s.command);
+      for (const i of same) {
+        const o = h('option', null, svc.starts[i].command);
         o.value = String(i);
         if (i === idx) o.selected = true;
         sel.append(o);
-      });
-      sel.addEventListener('change', () => {
-        const c = Object.assign({}, rn.choices.get(rn.projectId) || {});
-        c[svc.id] = Number(sel.value);
-        rn.choices.set(rn.projectId, c);
-        rnPaint();
-      });
+      }
+      sel.addEventListener('change', () => rnChoose(svc, Number(sel.value)));
       li.querySelector('.rn-cmd').replaceWith(sel);
     }
     ol.append(li);
@@ -7065,28 +7164,29 @@ function rnPaintPlan(body) {
       const t = h('div', null);
       t.append(h('span', null, c.text));
       if (c.hint) t.append(h('span', 'rn-hint', c.hint));
-      if (c.install) {
-        const b = h('button', 'btn btn-sm rn-install');
-        b.type = 'button';
-        b.append(icon('i-plus'), h('span', null, c.install.label + ' and run'));
-        b.addEventListener('click', () => rnStart({ install: c.install.tool }));
-        t.append(b);
-      }
       it.append(t);
       ul.append(it);
     }
     body.append(ul);
   }
 
+  const asks = plan.services.some((svc) => svc.setup.concat(rnChosen(svc, choices).start.pre || []).some((st) => st.consent))
+    || (plan.checks || []).some((c) => c.install);
+  const one = modes.length === 1 ? modes[0] : null;
   const bar = h('div', 'rn-bar');
   const go = h('button', 'btn rn-go');
   go.type = 'button';
-  go.append(icon('i-play'), h('span', null, 'Run project'));
+  go.append(icon('i-play'), h('span', null, RN_GO[one] || 'Run project'));
   go.disabled = !plan.ok || rn.busy;
   go.addEventListener('click', () => rnStart());
   bar.append(go);
-  bar.append(rnToggle('open', true, 'Open it when it\'s ready',
-    'When the site answers, open it in your browser. Desktop apps open their own window either way.'));
+  if (modes.includes('browser')) {
+    bar.append(rnToggle('open', true, 'Open it when it\'s ready', 'When the page answers, open it in your browser.'));
+  }
+  if (asks) {
+    bar.append(rnToggle('autoInstall', false, 'Install project dependencies without asking',
+      'Off: Run stops before each install, says what it will download and where, and waits for your yes. On: installs into the project folder (node_modules, .venv) go ahead by themselves. Installing a tool on your Mac always asks.'));
+  }
   if ((cm.status || {}).available) {
     bar.append(rnToggle('agent', false, 'If it fails, let an agent fix it and re-run',
       'For failures Run cannot cure by itself: a chat agent edits the project, then Run tries again, up to 3 times. It uses your Claude subscription.'));
@@ -7097,17 +7197,109 @@ function rnPaintPlan(body) {
     back.addEventListener('click', () => { rn.showPlan = false; rnPaint(); });
     bar.append(back);
   }
-  bar.append(h('span', 'rn-note', plan.ok
-    ? 'Runs in the project folder with your normal tools. Only this machine can start a run.'
-    : 'Fix what is marked above, then press Run.'));
+  bar.append(h('span', 'rn-note', !plan.ok ? 'Fix what is marked above, then press Run.'
+    : asks && !autoInstall ? 'Steps marked “asks first” pause the run and wait for your yes.'
+      : 'Runs in the project folder with your normal tools. Only this machine can start a run.'));
   body.append(bar);
 }
 
-function rnPlanStep(label, command, why) {
+function rnPlanStep(label, command, why, asks) {
   const li = h('li', 'rn-step');
   li.append(h('span', 'rn-label', label), h('code', 'rn-cmd mono', command));
+  if (asks) li.append(h('span', 'rn-asks', 'asks first'));
   if (why) li.append(h('span', 'rn-why', why));
   return li;
+}
+
+/* ── the question: "install this?" ────────────────────────────────────── */
+
+/** The body of the question, shared by the dialog and the card in the panel. */
+function rnAskItems(ask) {
+  const wrap = h('div', 'rn-ask-items');
+  for (const it of ask.items) {
+    const box = h('div', 'rn-ai');
+    const head = h('div', 'rn-ai-h');
+    head.append(h('strong', null, it.title + (it.service && rn.run && rn.run.multi ? ` (${it.service}/)` : '')),
+      h('span', 'rn-scope is-' + it.scope, it.scope === 'machine' ? 'Installs on this Mac' : 'Only inside this project'));
+    box.append(head);
+    if (it.now) {
+      const now = h('p', 'rn-ai-now');
+      now.append(h('span', 'rn-ai-k', 'Right now'), document.createTextNode(it.now.replace(/^./, (c) => c.toUpperCase()).replace(/([^.])$/, '$1.')));
+      box.append(now);
+    }
+    if (it.does && it.does.length) {
+      const k = h('p', 'rn-ai-now');
+      k.append(h('span', 'rn-ai-k', 'Installing will'));
+      box.append(k);
+      const ul = h('ul', 'rn-ai-does');
+      for (const d of it.does) ul.append(h('li', null, d));
+      box.append(ul);
+    }
+    if (it.packages && it.packages.length) {
+      const pk = h('div', 'rn-pkgs');
+      for (const name of it.packages.slice(0, 18)) pk.append(h('span', 'rn-pkg mono', name));
+      if (it.count > 18) pk.append(h('span', 'rn-pkg is-more', `+${it.count - 18} more`));
+      box.append(pk);
+    }
+    box.append(h('code', 'rn-cmd mono', '$ ' + it.command));
+    if (it.undo) box.append(h('p', 'rn-hint', 'To undo: ' + it.undo + '.'));
+    wrap.append(box);
+  }
+  return wrap;
+}
+
+function rnAskButtons(ask, after) {
+  const foot = h('div', 'rn-ask-foot');
+  const mk = (cls, label, answer, title) => {
+    const b = h('button', cls, label);
+    b.type = 'button';
+    if (title) b.title = title;
+    b.addEventListener('click', () => {
+      for (const x of foot.querySelectorAll('button')) x.disabled = true;
+      rnAnswer(ask, answer).finally(() => { if (after) after(); });
+    });
+    return b;
+  };
+  const machine = ask.items.some((i) => i.scope === 'machine');
+  foot.append(
+    mk('btn btn-ghost btn-sm', 'Stop', 'stop', 'End the run here. Nothing is installed.'),
+    mk('btn btn-sm', 'Skip, try without it', 'skip', 'Carry on without installing. If it then fails for want of it, Run asks again.'),
+    mk('btn btn-sm rn-go', machine ? 'Install and continue' : 'Install and continue', 'approve', 'Install, then carry on from where the run paused.'),
+  );
+  return foot;
+}
+
+function rnAnswer(ask, answer) {
+  return cmPost('/api/run/' + encodeURIComponent(rn.projectId) + '/answer', { id: ask.id, answer })
+    .then((r) => { if (!rnStale() && r.run && rn.run) { rn.run = Object.assign({}, rn.run, r.run, { log: rn.run.log }); rnPaint(); } })
+    .catch((err) => { if (!rnStale()) rn.node._body.prepend(h('div', 'rn-diag', 'The answer did not reach Run: ' + (err.message || 'unknown error'))); });
+}
+
+/** A modal the first time a question appears; the card in the panel stays until it is answered. */
+function rnAskDialog(ask) {
+  if (rn.askShown === ask.id) return;
+  rn.askShown = ask.id;
+  for (const stale of document.querySelectorAll('.rn-dialog')) stale.remove();
+  const dlg = h('dialog', 'forge-dialog rn-dialog');
+  dlg.setAttribute('aria-label', 'Install before running');
+  const inner = h('div', 'fd-in');
+  const machine = ask.items.some((i) => i.scope === 'machine');
+  inner.append(h('div', 'fd-h', machine ? 'Install a tool on this Mac?' : 'Install what this project needs?'),
+    h('p', 'fd-p', 'Run paused before changing anything. This is what is missing, what installing does, and where it goes. Say yes and the run carries on from here.'));
+  inner.append(rnAskItems(ask));
+  const close = () => { try { dlg.close(); } catch { /* closed */ } dlg.remove(); };
+  if (!machine) {
+    const remember = rnToggle('autoInstall', false, 'From now on, install project dependencies without asking',
+      'Only installs inside a project folder. Installing a tool on your Mac always asks.');
+    remember.classList.add('rn-remember');
+    inner.append(remember);
+  }
+  inner.append(rnAskButtons(ask, close));
+  dlg.append(inner);
+  dlg.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') ev.stopPropagation(); });
+  dlg.addEventListener('close', () => dlg.remove());
+  document.body.append(dlg);
+  try { dlg.showModal(); } catch { /* the card in the panel still asks */ }
 }
 
 /* ── during and after a run ───────────────────────────────────────────── */
@@ -7155,7 +7347,8 @@ function rnPaintRun(body, run) {
     const li = h('li', 'rn-pstep is-' + s.state);
     li.append(h('span', 'rn-pdot'));
     // A start step's label is its command; saying it twice is noise.
-    const txt = h('span', 'rn-plabel', (run.multi ? s.service + ': ' : '') + (s.kind === 'start' ? 'Start' : s.label));
+    const txt = h('span', 'rn-plabel', (run.multi ? s.service + ': ' : '') + (s.kind === 'start' ? (s.mode === 'app' || s.mode === 'simulator' ? 'Launch' : 'Start') : s.label)
+      + (s.declined ? ' (skipped by you)' : ''));
     li.append(txt, h('code', 'rn-cmd mono', s.command));
     if (s.durationMs != null && s.state !== 'running') li.append(h('span', 'rn-dur', (s.durationMs / 1000).toFixed(1) + 's'));
     steps.append(li);
@@ -7173,6 +7366,21 @@ function rnPaintRun(body, run) {
   }
 
   if (run.opened && run.readyUrl) body.append(h('p', 'rn-ok', 'Opened ' + run.readyUrl + ' in your browser.'));
+  const launched = (run.steps || []).find((s) => s.kind === 'start' && s.state === 'running' && (s.mode === 'app' || s.mode === 'simulator'));
+  if (launched) body.append(h('p', 'rn-ok', launched.mode === 'app' ? 'It is open in its own window. Stop quits it.' : 'It is running in the Simulator. Stop quits it.'));
+
+  if (run.ask) {
+    const card = h('div', 'rn-ask');
+    card.append(h('span', 'rn-who', 'Paused: this needs your yes'));
+    card.append(rnAskItems(run.ask));
+    card.append(rnAskButtons(run.ask, () => {
+      for (const d of document.querySelectorAll('.rn-dialog')) { try { d.close(); } catch { /* closed */ } d.remove(); }
+    }));
+    body.append(card);
+    rnAskDialog(run.ask);
+  } else {
+    for (const d of document.querySelectorAll('.rn-dialog')) { try { d.close(); } catch { /* closed */ } d.remove(); }
+  }
 
   const ag = run.agent;
   if (ag) {
@@ -7183,6 +7391,7 @@ function rnPaintRun(body, run) {
       fixed: ag.note || 'An agent fixed it.',
       'gave-up': ag.note || 'The agent could not fix it.',
       stopped: 'The agent was stopped.',
+      waiting: ag.note || 'The agent made its fix; Run is waiting for your answer below.',
     }[ag.state] || ag.state;
     box.append(icon(ag.state === 'fixed' ? 'i-check' : ag.state === 'gave-up' ? 'i-alert' : 'i-comms'), h('span', null, msg));
     body.append(box);
@@ -7263,6 +7472,7 @@ function rnStart(opts) {
   cmPost('/api/run/' + encodeURIComponent(projectId) + '/start', {
     choices: rn.choices.get(projectId) || {},
     open: rnPref('open', true),
+    autoInstall: rnPref('autoInstall', false),
     // The server checks whether an agent exists; the browser only says what you asked for.
     agent: rnPref('agent', false),
     install: opts && opts.install ? opts.install : undefined,

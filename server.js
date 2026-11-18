@@ -2609,7 +2609,7 @@ async function handleRun(req, res, pathname) {
     try {
       AUTOFIX.stop(id);
       runnerlib.setAgent(id, null);
-      const run = await runnerlib.start(project, { choices, open: body.open === true, install, autoAgent: body.agent === true });
+      const run = await runnerlib.start(project, { choices, open: body.open === true, install, autoAgent: body.agent === true, autoInstall: body.autoInstall === true });
       return sendJSON(res, 202, { run: runnerlib.toJSON(run, { withLog: true }) });
     } catch (err) {
       return sendError(res, err.status || 500, err.message || 'the project could not be started');
@@ -2619,6 +2619,19 @@ async function handleRun(req, res, pathname) {
     if (req.method !== 'POST') return sendError(res, 405, 'method not allowed');
     AUTOFIX.stop(id);
     return sendJSON(res, 200, { run: runnerlib.toJSON(runnerlib.stop(id, 'stopped from the dashboard')) });
+  }
+  if (action === 'answer') {
+    // The answer to "install this?" while a run is paused on it.
+    if (req.method !== 'POST') return sendError(res, 405, 'method not allowed');
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (err) { return sendError(res, err.status || 400, err.message || 'bad request'); }
+    try {
+      const run = runnerlib.answer(id, { id: typeof body.id === 'string' ? body.id : null, answer: body.answer });
+      return sendJSON(res, 200, { run: runnerlib.toJSON(run) });
+    } catch (err) {
+      return sendError(res, err.status || 500, err.message || 'the answer was not taken');
+    }
   }
   if (action === 'input') {
     if (req.method !== 'POST') return sendError(res, 405, 'method not allowed');

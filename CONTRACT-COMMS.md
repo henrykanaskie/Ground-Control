@@ -199,15 +199,46 @@ is a conversation in it.
 
 - A row of chats along the top: one per open conversation, a dot on any that is
   running, plus new and close.
-- The log: your messages, the agent's prose rendered as markdown, and between
-  them a compact strip of what it actually did (`Read agents.js`, `npm test`).
-  Tool labels are one line each and never the whole tool input.
+- The log: your messages, and the agent's prose rendered as one answer in
+  markdown, with math typeset (`public/js/math.js`, LaTeX to native MathML).
+  What it did is not interleaved with the answer: one folded line above it
+  ("Edited 2 files · ran 3 commands · read 4 files", or while it works, the step
+  it is on now) that opens to the list. Tool labels are one line each and never
+  the whole tool input.
 - The live tail of the sentence being written is shown as plain text with a
   caret. It is deliberately never run through markdown: half a fenced code
   block renders as garbage and would reflow every frame.
 - One SSE stream per open chat (`hello` replays everything, `delta` carries the
   live tail, `turn` and `settled` carry structure), reconnecting on a backoff.
   A `delta` touches one text node; everything else repaints the panel.
+
+### 5a. The chat must look finished (standing rule)
+
+The chat panel currently looks unfinished, and that is a defect, not a polish
+item. Any change that touches the chat log is held to this:
+
+- **Math is typeset, never shown as source.** `$…$` inline and `$$…$$` (or
+  `\[…\]`) display math render as real equations: proper fractions,
+  sub/superscripts, Greek letters, operators, and aligned multi-line
+  environments. Symbols (`→`, `≤`, `×`, `°`, `≈`) render as the glyph, in a
+  font that matches the text around them. CONTRACT.md forbids npm and CDNs, so
+  a typesetter (for example KaTeX) is vendored into `public/` with its fonts, or
+  written here; a raw `\frac{a}{b}` must never reach the screen.
+- **Everything aligns to one grid.** Messages, tool strips, code blocks,
+  tables, lists and equations share the same left edge, measure and vertical
+  rhythm. Nothing is flush against a border, nothing jumps between the live
+  tail and the settled render, and long lines (paths, URLs, wide tables or
+  equations) scroll inside their own block instead of widening the panel.
+- **Markdown is complete and styled.** Headings, nested lists, tables with
+  aligned columns, block quotes, inline code and fenced code with a language
+  label all have deliberate styles. Nothing falls back to browser defaults.
+- **It matches the rest of Ground Control.** Same colour tokens, type scale,
+  radii, borders and spacing as the panels around it (`public/css/app.css`),
+  in both themes. If it would look out of place next to the Run or Forge panel,
+  it is not done.
+- **Checked by eye.** A change to the chat log is not finished until it has
+  been looked at in the real panel with a reply that contains prose, a list, a
+  table, a code block, inline and display math, and a long path.
 
 **Comms' own children are excluded from agent detection.** Forge already has
 this problem and solves it the same way: a `claude` process with its cwd inside

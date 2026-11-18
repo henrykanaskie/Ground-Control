@@ -214,6 +214,12 @@ test('a dependency that was never installed is installed, then the start retried
   fs.utimesSync(path.join(dir, 'node_modules'), later, later);
 
   await runner.start({ id: 'rn-dep', path: dir });
+  // The install is a question first: the run pauses, says what it will do, and waits.
+  const paused = await waitFor('rn-dep', (r) => r.state === 'waiting' || runner.isTerminal(r.state), 30000);
+  assert.equal(paused.state, 'waiting', JSON.stringify(paused.diagnosis));
+  assert.match(paused.ask.items[0].does.join(' '), /node_modules/);
+  assert.equal(paused.ask.items[0].scope, 'project');
+  runner.answer('rn-dep', { id: paused.ask.id, answer: 'approve' });
   const run = await waitFor('rn-dep', (r) => runner.isTerminal(r.state), 60000);
   assert.equal(run.state, 'done', JSON.stringify(run.diagnosis));
   assert.match(run.fixes[0].action, /Installing the dependencies/);
@@ -255,6 +261,9 @@ test('a cure that did not work is not recommended again', async () => {
   const root = fixtureRoot('rn-still');
   const dir = project(root, 'still', { files: { 'package.json': JSON.stringify({ name: 'still', scripts: { start: 'node -e "require(\'gc-absent-mod\')"' } }) } });
   await runner.start({ id: 'rn-still', path: dir });
+  const paused = await waitFor('rn-still', (r) => r.state === 'waiting', 30000);
+  assert.match(paused.ask.items[0].now, /gc-absent-mod/, 'the question says what failed');
+  runner.answer('rn-still', { id: paused.ask.id, answer: 'approve' });
   const run = await waitFor('rn-still', (r) => runner.isTerminal(r.state), 60000);
   assert.equal(run.state, 'failed');
   assert.equal(run.fixes.length, 1, 'the install is tried once, never in a loop');
@@ -316,15 +325,22 @@ test('a macOS Xcode app is built into a cache and launched; an iOS app opens in 
   const root = fixtureRoot('rn-xcode');
   const mac = project(root, 'Clock', { files: { 'Clock.xcodeproj/project.pbxproj': 'SDKROOT = macosx;' } });
   const plan = runner._internals().detectXcode(mac, { platform: 'darwin', listJson: { project: { schemes: ['Clock', 'ClockTests'] } } });
-  assert.equal(plan.setup[0].argv[0], 'xcodebuild');
-  assert.ok(plan.setup[0].argv.includes('Clock'));
-  const dd = plan.setup[0].argv[plan.setup[0].argv.indexOf('-derivedDataPath') + 1];
+  const build = plan.starts[0].pre[0];
+  assert.equal(build.argv[0], 'xcodebuild');
+  assert.ok(build.argv.includes('Clock'));
+  const dd = build.argv[build.argv.indexOf('-derivedDataPath') + 1];
   assert.ok(!dd.startsWith(mac), 'build output goes outside the project');
   assert.equal(plan.starts[0].builtin, 'app-binary');
+  assert.equal(plan.starts[1].mode, 'editor', 'opening it in Xcode stays a choice, and builds nothing');
+  assert.ok(!plan.starts[1].pre);
 
+  // An iOS app runs in the Simulator, not merely opened in Xcode.
   const ios = project(root, 'Phone', { files: { 'Phone.xcodeproj/project.pbxproj': 'SDKROOT = iphoneos;' } });
-  const p2 = runner._internals().detectXcode(ios, { platform: 'darwin', listJson: { project: { schemes: ['Phone'] } } });
-  assert.deepEqual(p2.starts[0].argv, ['open', 'Phone.xcodeproj']);
+  const p2 = runner._internals().detectXcode(ios, { platform: 'darwin', listJson: { project: { schemes: ['Phone', 'PhoneWidget'] } } });
+  assert.equal(p2.starts[0].mode, 'simulator');
+  assert.equal(p2.starts[0].builtin, 'ios-sim');
+  assert.ok(p2.starts[0].pre[0].argv.includes('generic/platform=iOS Simulator'));
+  assert.deepEqual(p2.starts[1].argv, ['open', 'Phone.xcodeproj']);
 });
 
 test('the built app\'s executable is found from Info.plist', () => {
@@ -418,4 +434,104 @@ test('a program that asks a question can be answered from the panel', async () =
   const run = await waitFor('rn-input', (r) => runner.isTerminal(r.state));
   assert.equal(run.state, 'done');
   assert.ok(run.log.some((e) => e.l === 'hello Henry'));
+});
+
+/* ---- run it as what it is ------------------------------------------ */
+
+const mac = process.platform === 'darwin';
+
+test('a project that builds a Mac app opens as the app, with the browser one click away', { skip: !mac }, () => {
+  const root = fixtureRoot('rn-macapp');
+  const dir = project(root, 'wrap', { files: {
+    'package.json': JSON.stringify({ scripts: { start: 'node server.js', setup: 'npm install', doctor: 'node server/doctor.js' } }),
+    'server.js': '', 'build-app.sh': '#!/bin/bash\nAPP_NAME="Wrap"\n# --no-install skips copying\n',
+  } });
+  const s1 = svc(dir);
+  assert.equal(s1.starts[0].builtin, 'app-bundle');
+  assert.equal(s1.starts[0].mode, 'app');
+  assert.deepEqual(s1.starts[0].pre[0].argv, ['bash', 'build-app.sh', '--no-install'], 'never built yet, so it builds first, inside the project');
+  assert.equal(s1.starts[1].mode, 'browser', 'the server in a browser is the alternative');
+  assert.ok(!s1.starts.some((st) => st.id === 'script:setup'), 'an install script is not a way to start it');
+  assert.equal(s1.starts.find((st) => st.id === 'script:doctor').mode, 'terminal');
+
+  // Built, and nothing changed since: no rebuild.
+  const exe = write(dir, 'Wrap.app/Contents/MacOS/Wrap', '#!/bin/sh\n');
+  write(dir, 'Wrap.app/Contents/Info.plist', '<key>CFBundleExecutable</key>\n<string>Wrap</string>');
+  fs.chmodSync(exe, 0o755);
+  const later = new Date(Date.now() + 60_000);
+  fs.utimesSync(exe, later, later);
+  assert.equal(svc(dir).starts[0].pre.length, 0);
+});
+
+test('a desktop app never also opens a browser tab', { skip: !mac }, async () => {
+  const root = fixtureRoot('rn-noweb');
+  const dir = project(root, 'w', { files: { 'build-app.sh': 'APP_NAME="W"\n' } });
+  const exe = write(dir, 'W.app/Contents/MacOS/W', '#!/bin/sh\necho "listening on http://localhost:1"\nsleep 5\n');
+  write(dir, 'W.app/Contents/Info.plist', '<key>CFBundleExecutable</key>\n<string>W</string>');
+  fs.chmodSync(exe, 0o755);
+  const later = new Date(Date.now() + 60_000);
+  fs.utimesSync(exe, later, later);
+  const run = await runner.start({ id: 'rn-noweb', path: dir }, { open: true });
+  assert.equal(run.openOnReady, false);
+  await waitFor('rn-noweb', (r) => r.log.some((e) => /listening/.test(e.l)));
+  assert.equal(runner.toJSON(runner.get('rn-noweb')).steps[0].mode, 'app');
+  runner.stop('rn-noweb');
+});
+
+test('a Swift package runs its app executable, not the first one listed', () => {
+  const root = fixtureRoot('rn-swift');
+  const dir = project(root, 'sp', { files: {
+    'Package.swift': '.executable(name: "replay", targets: ["Replay"]),\n.executable(name: "room", targets: ["RoomApp"]),',
+    'Sources/Replay/main.swift': 'print("hi")', 'Sources/RoomApp/App.swift': 'import SwiftUI\n',
+    'Makefile': 'run:\n\tswift run room\n',
+  } });
+  const s1 = svc(dir);
+  assert.deepEqual(s1.starts[0].argv, ['make', 'run']);
+  assert.equal(s1.starts[0].mode, 'app', 'make run wraps the app, so it is the app');
+  assert.ok(s1.starts.some((st) => st.label === 'swift run replay' && st.mode === 'terminal'));
+});
+
+test('a Python program with a window is an app; a service in app/ uses the root\'s environment', () => {
+  const root = fixtureRoot('rn-pygui');
+  const g = project(root, 'g', { files: { 'main.py': 'import tkinter as tk\n' } });
+  assert.equal(svc(g).starts[0].mode, 'app');
+  const shared = project(root, 'shared', { files: { 'requirements.txt': 'flask\n', 'app/main.py': 'print(1)\n' } });
+  fs.mkdirSync(path.join(shared, '.venv', 'bin'), { recursive: true });
+  fs.writeFileSync(path.join(shared, '.venv', 'bin', 'python'), '#!/bin/sh\n', { mode: 0o755 });
+  const s2 = runner.detectPlan(shared).services[0];
+  assert.equal(s2.dir, 'app');
+  assert.equal(s2.venvName, path.join('..', '.venv'));
+  assert.ok(s2.setup.some((st) => st.argv && st.argv.includes(path.join('..', 'requirements.txt'))));
+});
+
+test('an install that is skipped is not run, the run carries on, and Stop ends a paused run', async () => {
+  const root = fixtureRoot('rn-skip');
+  const dir = project(root, 'sk', { files: { 'package.json': JSON.stringify({ scripts: { start: 'node -e "console.log(42)"' }, dependencies: { 'gc-nothing': 'file:./nope' } }) } });
+  await runner.start({ id: 'rn-skip', path: dir });
+  const paused = await waitFor('rn-skip', (r) => r.state === 'waiting');
+  assert.throws(() => runner.answer('rn-skip', { id: 'stale', answer: 'approve' }), /already answered/);
+  runner.answer('rn-skip', { id: paused.ask.id, answer: 'skip' });
+  const run = await waitFor('rn-skip', (r) => runner.isTerminal(r.state));
+  assert.equal(run.state, 'done');
+  assert.equal(run.steps[0].state, 'skipped');
+  assert.ok(!fs.existsSync(path.join(dir, 'node_modules')), 'nothing was installed');
+
+  await runner.start({ id: 'rn-skip', path: dir });
+  await waitFor('rn-skip', (r) => r.state === 'waiting');
+  runner.stop('rn-skip');
+  const stopped = await waitFor('rn-skip', (r) => runner.isTerminal(r.state));
+  assert.equal(stopped.state, 'stopped');
+  assert.equal(stopped.ask, null);
+});
+
+test('"without asking" covers project installs only', async () => {
+  const root = fixtureRoot('rn-auto');
+  const dir = project(root, 'au', { files: { 'package.json': JSON.stringify({ scripts: { start: 'node -e 1' }, dependencies: { 'gc-x': 'file:./x' } }), 'x/package.json': '{"name":"gc-x","version":"1.0.0"}' } });
+  await runner.start({ id: 'rn-auto', path: dir }, { autoInstall: true });
+  const run = await waitFor('rn-auto', (r) => runner.isTerminal(r.state), 60000);
+  assert.equal(run.state, 'done', JSON.stringify(run.diagnosis));
+  const tool = runner._internals().describeInstall({ plan: { services: [{ id: '.', kind: 'node', dir: '' }] }, steps: [] },
+    { key: 'k', service: '.', cwd: dir, label: 'Install node with Homebrew', display: 'brew install node', def: { id: 'install-tool', via: 'brew', tool: 'node', argv: ['brew', 'install', 'node'] } });
+  assert.equal(tool.scope, 'machine');
+  assert.match(tool.does.join(' '), /every project/);
 });

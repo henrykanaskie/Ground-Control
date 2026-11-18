@@ -1980,10 +1980,18 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 .cm-blank{padding:26px 20px 24px;text-align:center}
 .cm-blank p{max-width:52ch;margin:0 auto 14px;font-size:12.5px;line-height:1.65;color:var(--text-3)}
 
-/* the conversation */
+/* the conversation
+ *
+ * One grid: every block in the log (the label, the answer, the folded "what it
+ * did" line, code, tables, equations) starts at the same left edge and keeps
+ * the same measure. Wide things scroll inside themselves; the panel never
+ * widens. The live tail uses the answer's exact type so nothing jumps when it
+ * settles into rendered markdown.
+ */
 .cm-log{
-  max-height:min(56vh,540px);overflow-y:auto;overscroll-behavior:contain;
-  padding:14px 16px;display:flex;flex-direction:column;gap:14px;
+  --cm-size:13.5px; --cm-lh:1.65; --cm-gap:10px;
+  max-height:min(60vh,600px);overflow-y:auto;overscroll-behavior:contain;
+  padding:18px 20px 20px;display:flex;flex-direction:column;gap:22px;
 }
 .cm-empty{font-size:12.5px;color:var(--text-3);text-align:center;padding:16px 0}
 .cm-seed{
@@ -1993,34 +2001,83 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 }
 .cm-seed.is-warn{border-color:rgba(var(--accent-rgb),.45);color:var(--warn)}
 
-.cm-msg{display:flex;flex-direction:column;gap:6px;min-width:0}
+.cm-msg{display:flex;flex-direction:column;gap:8px;min-width:0}
 .cm-who{
-  display:flex;align-items:center;gap:7px;
+  display:flex;align-items:center;gap:8px;height:14px;
   font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);
 }
-.cm-dur{font-size:10px;letter-spacing:0;text-transform:none;color:var(--empty)}
+.cm-msg.is-agent .cm-who > span:first-child{color:var(--accent-2)}
+.cm-dur{font-size:10px;letter-spacing:0;text-transform:none;color:var(--idle)}
 .cm-msg.is-you .cm-text{
+  align-self:flex-start;max-width:100%;
   background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-sm);
-  padding:9px 12px;white-space:pre-wrap;
+  padding:9px 13px;white-space:pre-wrap;
 }
-.cm-text{font-size:13px;line-height:1.7;color:var(--text);min-width:0;overflow-wrap:anywhere}
+.cm-text{font-size:var(--cm-size);line-height:var(--cm-lh);color:var(--text);min-width:0;overflow-wrap:break-word}
 .cm-text.is-plain{white-space:pre-wrap}
 
-/* the reader's markdown, shrunk to chat size */
-.cm-text.ground-control-doc{max-width:none;padding:0;font-size:13px;line-height:1.7}
-.cm-text.ground-control-doc p{margin:0 0 8px;font-size:13px;line-height:1.7}
-.cm-text.ground-control-doc > :last-child{margin-bottom:0}
-.cm-text.ground-control-doc h1,
-.cm-text.ground-control-doc h2,
-.cm-text.ground-control-doc h3,
-.cm-text.ground-control-doc h4{margin:12px 0 6px;font-size:13px;line-height:1.4;border:0;padding:0}
-.cm-text.ground-control-doc ul,
-.cm-text.ground-control-doc ol{margin:0 0 8px;padding-left:20px}
-.cm-text.ground-control-doc li{margin:2px 0;font-size:13px;line-height:1.6}
-.cm-text.ground-control-doc pre{margin:8px 0;font-size:11.5px;line-height:1.55;max-height:280px}
-.cm-text.ground-control-doc code{font-size:11.5px}
-.cm-text.ground-control-doc table{font-size:12px;display:block;overflow-x:auto}
-.cm-text.ground-control-doc blockquote{margin:8px 0;font-size:12.5px}
+/* the reader's markdown, set for a chat */
+.cm-text.ground-control-doc,
+.cm-text .ground-control-doc{max-width:none;margin:0;padding:0;font-size:var(--cm-size);line-height:var(--cm-lh);color:var(--text)}
+.cm-text .ground-control-doc > :first-child{margin-top:0}
+.cm-text .ground-control-doc > :last-child{margin-bottom:0}
+.cm-text .ground-control-doc p{margin:0 0 var(--cm-gap);font-size:inherit;line-height:inherit}
+.cm-text .ground-control-doc :is(h1,h2,h3,h4,h5,h6){
+  margin:18px 0 6px;padding:0;border:0;font-weight:620;letter-spacing:-.005em;line-height:1.35;color:var(--text);
+}
+.cm-text .ground-control-doc h1{font-size:16px}
+.cm-text .ground-control-doc h2{font-size:15px}
+.cm-text .ground-control-doc h3{font-size:14px}
+.cm-text .ground-control-doc :is(h4,h5,h6){font-size:13px;color:var(--text-2);text-transform:none}
+.cm-text .ground-control-doc .heading-anchor{display:none}
+.cm-text .ground-control-doc :is(ul,ol){margin:0 0 var(--cm-gap);padding-left:1.4em}
+.cm-text .ground-control-doc ul{list-style:disc}
+.cm-text .ground-control-doc ul ul{list-style:circle}
+.cm-text .ground-control-doc ol{list-style:decimal}
+.cm-text .ground-control-doc li{margin:3px 0;padding-left:.15em;font-size:inherit;line-height:inherit}
+.cm-text .ground-control-doc li::marker{color:var(--text-3)}
+.cm-text .ground-control-doc ol > li::marker{font-family:var(--mono);font-size:.85em}
+.cm-text .ground-control-doc li > :is(ul,ol){margin:3px 0 0}
+.cm-text .ground-control-doc li > p{margin:0 0 4px}
+.cm-text .ground-control-doc strong{font-weight:620}
+.cm-text .ground-control-doc a{color:var(--accent);text-decoration:underline;text-decoration-color:rgba(var(--accent-rgb),.35);text-underline-offset:2px}
+.cm-text .ground-control-doc :not(pre) > code{font-size:.86em;padding:.08em .38em;border-radius:4px;overflow-wrap:anywhere;white-space:normal}
+.cm-text .ground-control-doc .md-pre{margin:4px 0 calc(var(--cm-gap) + 2px);background:var(--bg)}
+.cm-text .ground-control-doc .md-pre > code{padding:11px 14px;font-size:12px;line-height:1.6;max-height:320px;overflow:auto}
+.cm-text .ground-control-doc .md-pre[data-lang]::before{top:6px;right:8px;font-size:9.5px}
+.cm-text .ground-control-doc .md-table-wrap{margin:4px 0 calc(var(--cm-gap) + 2px);overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius-sm)}
+.cm-text .ground-control-doc .md-table{margin:0;width:100%;border-collapse:collapse;font-size:12.5px;line-height:1.5;border:0}
+.cm-text .ground-control-doc .md-table :is(th,td){padding:6px 12px;border:0;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.cm-text .ground-control-doc .md-table th{
+  font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);background:var(--bg-2);white-space:nowrap;
+}
+.cm-text .ground-control-doc .md-table tbody tr:last-child > *{border-bottom:0}
+.cm-text .ground-control-doc .md-table .md-right{text-align:right;font-variant-numeric:tabular-nums}
+.cm-text .ground-control-doc .md-table .md-center{text-align:center}
+.cm-text .ground-control-doc blockquote{margin:4px 0 var(--cm-gap);padding:2px 0 2px 12px;border-left:2px solid var(--line-2);color:var(--text-2);font-size:inherit}
+.cm-text .ground-control-doc hr{margin:14px 0;border:0;border-top:1px solid var(--line)}
+.cm-text .ground-control-doc img{max-width:100%;border-radius:var(--radius-sm)}
+
+/* typeset math (public/js/math.js): the system's math font, sized to sit on
+   the same x-height as the sans text around it */
+.gc-math{
+  font-family:"STIX Two Math","Latin Modern Math","Cambria Math","Noto Sans Math",math;
+  font-size:1.1em;color:var(--text);
+}
+.gc-math mo,.gc-math mi,.gc-math mn{color:inherit}
+.math-block{
+  display:block;margin:4px 0 calc(var(--cm-gap, 10px) + 2px);padding:10px 14px;
+  overflow-x:auto;overflow-y:hidden;
+  background:var(--bg-2);border:1px solid var(--line);border-radius:var(--radius-sm);
+}
+/* Block math centres itself; an inherited text-align:center would also
+   centre every cell of an aligned environment and undo the alignment. */
+.math-block .gc-math{margin:0 auto;font-size:1.16em;text-align:start}
+.gc-math mtable.math-aligned mtd{padding:3px 0}
+.gc-math mtable.math-matrix mtd{padding:2px 9px}
+.gc-math mtable.math-cases mtd{padding:2px 12px 2px 4px}
+.gc-math .math-unknown{color:var(--warn);font-family:var(--mono);font-size:.8em}
+.math-raw{color:var(--warn)}
 
 /* the live tail of the sentence being written */
 .cm-text.is-live{color:var(--text-2)}
@@ -2031,19 +2088,37 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 }
 @keyframes cm-caret{0%,49%{opacity:.75}50%,100%{opacity:0}}
 
-/* what the agent did, between the sentences */
-.cm-tools{display:flex;flex-direction:column;gap:1px;margin:1px 0}
-.cm-tool{
-  display:flex;align-items:baseline;gap:8px;min-width:0;
-  padding:3px 9px;border-left:2px solid var(--line-2);
-  font-size:11.5px;color:var(--text-3);
+/* what the agent did: one folded line above the answer */
+.cm-did{min-width:0}
+.cm-did-s{
+  display:inline-flex;align-items:center;gap:8px;max-width:100%;
+  list-style:none;cursor:pointer;user-select:none;
+  font-size:11.5px;line-height:20px;color:var(--text-3);
 }
-.cm-tname{font-family:var(--mono);font-size:10px;color:var(--accent-2);flex:none}
+.cm-did-s::-webkit-details-marker{display:none}
+.cm-did-s:hover{color:var(--text-2)}
+.cm-did-s:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+.cm-did-chev{
+  flex:none;width:6px;height:6px;margin:0 2px 0 1px;
+  border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;
+  transform:rotate(-45deg);transition:transform var(--t-fast);
+}
+.cm-did[open] .cm-did-chev{transform:rotate(45deg)}
+.cm-did-t,.cm-did-now{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.cm-did.is-live .cm-did-now{color:var(--text-2)}
+.cm-did.is-live .cm-did-chev{color:var(--accent)}
+.cm-did-bad{flex:none;font-size:10.5px;padding:0 6px;line-height:16px;border-radius:99px;border:1px solid var(--danger-line);color:var(--danger)}
+.cm-did-list{
+  margin:6px 0 2px 3px;padding:2px 0 2px 14px;list-style:none;
+  border-left:1px solid var(--line-2);
+  display:flex;flex-direction:column;gap:2px;max-height:220px;overflow:auto;
+}
+.cm-did-list li{display:flex;min-width:0;font-size:11.5px;line-height:1.55;color:var(--text-3)}
+.cm-did-list li.is-bad{color:var(--danger)}
 .cm-tlabel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-.cm-tool.is-bad{border-left-color:#7a3838}
-.cm-tool.is-bad .cm-tname{color:#f8a4a4}
+@media (prefers-reduced-motion:reduce){.cm-did-chev{transition:none}}
 
-.cm-think{font-size:12px;color:var(--text-3);font-style:italic}
+.cm-think{font-size:12px;line-height:20px;color:var(--text-3)}
 .cm-note{font-size:11px;color:var(--empty)}
 .cm-err{
   font-size:12px;line-height:1.6;color:#f8a4a4;
@@ -2100,7 +2175,7 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
   .cm-dot,.cm-text.is-live::after{animation:none}
 }
 @media (max-width:640px){
-  .cm-log{max-height:64vh}
+  .cm-log{max-height:64vh;padding:14px 16px 16px}
   .cm-tab{max-width:140px}
 }
 
@@ -2230,3 +2305,49 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
 @media (prefers-reduced-motion:reduce){.rn-agent .icon{animation:none!important}}
 .rn-copy{margin-left:6px}
 .rn-copytext{display:block;width:100%;min-height:160px;margin-top:10px;padding:8px;font-size:11px;color:var(--text);background:var(--bg);border:1px solid var(--line-2);border-radius:var(--radius-xs)}
+
+/* Run: how it is run (app, browser, panel), and the install question */
+.rn-modes{display:inline-flex;flex-wrap:wrap;gap:0;margin:2px 0 8px;border:1px solid var(--line-2);border-radius:var(--radius-xs);overflow:hidden}
+.rn-mode{
+  height:26px;padding:0 11px;font:inherit;font-size:12px;color:var(--text-2);
+  background:transparent;border:0;border-right:1px solid var(--line);cursor:pointer;
+}
+.rn-mode:last-child{border-right:0}
+.rn-mode:hover{color:var(--text);background:var(--bg-2)}
+.rn-mode.is-on{color:var(--text);background:rgba(74,222,128,.12);box-shadow:inset 0 -2px 0 var(--active)}
+.rn-mode:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.rn-outcome{margin:0 0 8px;font-size:12.5px;line-height:1.55;color:var(--text)}
+.rn-asks{
+  display:inline-block;margin-left:8px;padding:0 6px;border:1px solid rgba(var(--warn-rgb),.5);border-radius:99px;
+  font-size:10.5px;line-height:17px;color:var(--warn);vertical-align:1px;
+}
+.rn-badge.is-waiting{border-color:rgba(var(--warn-rgb),.55)}
+.rn-badge.is-waiting .rn-dot{background:var(--warn);animation:rn-pulse 1.4s var(--ease) infinite}
+.panel.rn[data-state="waiting"] .panel-h .icon{color:var(--warn)}
+
+.rn-ask{
+  margin:0 0 10px;padding:12px 14px;border:1px solid rgba(var(--warn-rgb),.5);border-radius:var(--radius-sm);
+  background:rgba(var(--warn-rgb),.07);
+}
+.rn-ask .rn-who{color:var(--warn)}
+.rn-ask-items{display:flex;flex-direction:column;gap:12px}
+.rn-ai{display:flex;flex-direction:column;gap:6px}
+.rn-ai + .rn-ai{padding-top:12px;border-top:1px solid var(--line)}
+.rn-ai-h{display:flex;align-items:baseline;flex-wrap:wrap;gap:8px;font-size:13px;color:var(--text)}
+.rn-scope{font-size:10.5px;padding:0 7px;line-height:18px;border-radius:99px;border:1px solid var(--line-2);color:var(--text-2)}
+.rn-scope.is-machine{border-color:rgba(var(--warn-rgb),.55);color:var(--warn)}
+.rn-ai-now{margin:0;font-size:12.5px;line-height:1.55;color:var(--text-2)}
+.rn-ai-k{display:block;font-size:10.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--text-3)}
+.rn-ai-does{margin:0;padding-left:18px;font-size:12.5px;line-height:1.55;color:var(--text-2)}
+.rn-pkgs{display:flex;flex-wrap:wrap;gap:4px}
+.rn-pkg{padding:0 6px;line-height:18px;font-size:11px;border:1px solid var(--line);border-radius:var(--radius-xs);background:var(--bg-2);color:var(--text-2)}
+.rn-pkg.is-more{font-family:inherit;color:var(--text-3)}
+.rn-ask-foot{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:12px}
+.rn-dialog .rn-ask-items{max-height:min(56vh,480px);overflow:auto;padding-right:4px}
+.rn-dialog .rn-ask-foot{margin-top:0}
+.rn-remember{font-size:12px}
+@media (max-width:640px){
+  .rn-ask-foot{flex-direction:column-reverse}
+  .rn-ask-foot .btn{justify-content:center;width:100%}
+}
+@media (prefers-reduced-motion:reduce){.rn-badge.is-waiting .rn-dot{animation:none!important}}

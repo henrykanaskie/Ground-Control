@@ -108,8 +108,17 @@ async function examine(project) {
   }
   if (!TRY || !out.plan.services.length) return out;
   try {
-    await runner.start({ id: 'doctor:' + project.id, path: project.path }, { open: false });
-    const r = await waitSettled('doctor:' + project.id, PER_PROJECT_MS);
+    const rid = 'doctor:' + project.id;
+    // --try is your yes to installs inside the project (node_modules, .venv),
+    // never to installing tools on this Mac: those it skips and reports.
+    const off = runner.subscribe(rid, (event, r) => {
+      if (event !== 'state' || !r.ask) return;
+      const inside = r.ask.items.every((i) => i.scope === 'project');
+      try { runner.answer(rid, { id: r.ask.id, answer: inside ? 'approve' : 'skip' }); } catch { /* answered already */ }
+    });
+    await runner.start({ id: rid, path: project.path }, { open: false });
+    const r = await waitSettled(rid, PER_PROJECT_MS);
+    off();
     const j = runner.toJSON(r, { withLog: true });
     out.run = {
       state: j.state, readyUrl: j.readyUrl, urls: j.urls, diagnosis: j.diagnosis, fixes: j.fixes,
