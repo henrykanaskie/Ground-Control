@@ -267,15 +267,25 @@ GET    /api/comms/chat/:id/stream        -> SSE: hello | delta | turn | settled 
 ```
 
 `Chat` is `{ id, projectId, projectName, title, model, state, error, sessionId,
-resumeFrom, createdISO, updatedISO, messageCount, costUsd, interrupted, turns }`.
+resumeFrom, createdISO, updatedISO, messageCount, costUsd, interrupted, queue, turns }`,
+where `queue` is `[{ id, text, atISO }]`, the messages waiting to be sent.
 A `turn` is either `{ role: 'user', text }` or `{ role: 'agent', state, steps,
 partial, costUsd, durationMs, error }`, where a step is `{ kind: 'text', text }`
 or `{ kind: 'tool', name, label, state }`.
 
-Refusals are a status and a sentence, never a queue: 409 while a chat is still
-working, 429 past three concurrent turns, 413 past 32 KB in one message, 503
-when the CLI is not installed. A chat that banks your messages and replays them
-minutes later is worse than one that says it is busy.
+**Sending while it works queues, visibly.** A message sent while the chat is
+mid-turn (or while three turns are already running elsewhere) is not refused:
+it joins the chat's `queue`, shows in the log as a dashed "waiting" bubble
+with an × to take it back (`DELETE /api/comms/chat/:id/queue/:itemId`, which
+returns it to the box), and goes to the agent the moment the turn ends. Several
+waiting messages go together as one turn, each shown as its own bubble. The
+queue holds at most 10 and survives a restart. What was never acceptable is a
+*silent* queue; this one is in plain view, removable, and sent without delay.
+The stream carries a `chat` event with the whole chat whenever the queue
+changes or drains.
+
+Refusals are a status and a sentence: 429 past 10 waiting messages, 413 past
+32 KB in one message, 503 when the CLI is not installed.
 
 ---
 

@@ -6552,7 +6552,35 @@ function cmLog(chat) {
   }
 
   for (const t of turns) log.append(t.role === 'user' ? cmYou(t) : cmAgent(t));
+  for (const q of chat.queue || []) log.append(cmQueued(chat, q));
   return log;
+}
+
+/** A message waiting behind the running turn: shown, and removable until it goes. */
+function cmQueued(chat, q) {
+  const m = h('div', 'cm-msg is-you is-queued');
+  const who = h('div', 'cm-who');
+  who.append(h('span', null, 'you'), h('span', 'cm-wait', 'waiting · sends when this reply ends'));
+  if (q.id !== 'local-q') {
+    const x = h('button', 'cm-unq');
+    x.type = 'button';
+    x.title = 'Take this message back. It has not been sent.';
+    x.setAttribute('aria-label', 'Remove this waiting message');
+    x.append(icon('i-x'));
+    x.addEventListener('click', () => {
+      x.disabled = true;
+      cmPost('/api/comms/chat/' + encodeURIComponent(chat.id) + '/queue/' + encodeURIComponent(q.id), undefined, 'DELETE')
+        .then((r) => {
+          if (r && r.id) cm.full.set(chat.id, r);
+          cm.drafts.set(chat.id, [cm.drafts.get(chat.id), q.text].filter(Boolean).join('\n\n'));
+          if (!cmStale()) cmPaint();
+        })
+        .catch((err) => { x.disabled = false; if (!cmStale()) cmShowError(err.message || 'it could not be removed'); });
+    });
+    who.append(x);
+  }
+  m.append(who, h('div', 'cm-text', q.text || ''));
+  return m;
 }
 
 function cmYou(t) {
@@ -6694,10 +6722,9 @@ function cmComposer(chat) {
   const ta = h('textarea', 'cm-input');
   ta.rows = 2;
   ta.placeholder = running
-    ? 'The agent is working. Stop it, or wait.'
+    ? 'Add another message. It waits and goes to the agent when this reply ends…'
     : 'Ask about this project, or tell the agent what to change…';
   ta.value = cm.drafts.get(chat.id) || '';
-  ta.disabled = running;
   ta.addEventListener('input', () => {
     cm.drafts.set(chat.id, ta.value);
     ta.style.height = 'auto';
@@ -6725,19 +6752,19 @@ function cmComposer(chat) {
         .catch(() => { stop.disabled = false; });
     });
     row.append(stop);
-  } else {
-    const send = h('button', 'btn btn-primary cm-send');
-    send.type = 'button';
-    send.append(icon('i-send'), h('span', null, 'Send'));
-    send.addEventListener('click', () => cmSend(chat.id, ta.value));
-    row.append(send);
   }
+  const send = h('button', 'btn btn-primary cm-send');
+  send.type = 'button';
+  send.append(icon('i-send'), h('span', null, running ? 'Queue' : 'Send'));
+  send.title = running ? 'It waits in the log and goes to the agent as soon as the current reply ends.' : '';
+  send.addEventListener('click', () => cmSend(chat.id, ta.value));
+  row.append(send);
   wrap.append(row);
 
   cm.errNode = err;
   // Focus only when you asked for this chat (opened it, or just sent), and
   // never by scrolling the page to it: a repaint must not move what you read.
-  if (!running && cm.focusNext === chat.id) {
+  if (cm.focusNext === chat.id) {
     cm.focusNext = null;
     setTimeout(() => { try { ta.focus({ preventScroll: true }); } catch { /* ignore */ } }, 0);
   }
@@ -6807,7 +6834,25 @@ function cmSend(id, text) {
   const body = String(text || '').trim();
   if (!body) return;
   const chat = cm.full.get(id);
-  if (!chat || chat.state === 'running') return;
+  if (!chat) return;
+
+  // While it works, the message waits: shown at once as waiting, and the
+  // server's copy of the queue replaces this one when it answers.
+  if (chat.state === 'running' || (chat.queue && chat.queue.length)) {
+    chat.queue = (chat.queue || []).concat([{ id: 'local-q', text: body, atISO: new Date().toISOString() }]);
+    cm.drafts.delete(id);
+    cm.focusNext = id;
+    cmPaint();
+    cmScrollLog(true);
+    cmPost('/api/comms/chat/' + encodeURIComponent(id) + '/send', { text: body })
+      .then((r) => { if (r && r.chat) cm.full.set(id, r.chat); if (!cmStale()) cmPaint(); })
+      .catch((err) => {
+        chat.queue = (chat.queue || []).filter((q) => q.id !== 'local-q');
+        cm.drafts.set(id, body);
+        if (!cmStale()) { cmPaint(); cmShowError(err.message || 'the message could not be queued'); }
+      });
+    return;
+  }
 
   // Paint the message immediately: waiting for the round trip to see your own
   // words is the thing that makes a chat feel broken.
@@ -6933,6 +6978,19 @@ function cmOpenStream(chatId) {
     const at = (chat.turns || []).findIndex((t) => t.id === data.turn.id || t.id === 'local-a');
     if (at === -1) chat.turns.push(data.turn); else chat.turns[at] = data.turn;
     if (data.chat) Object.assign(chat, data.chat, { turns: chat.turns });
+    cmPaint();
+    cmScrollLog();
+  });
+
+  /* The queue changed, or waiting messages just went: the whole chat. */
+  src.addEventListener('chat', (ev) => {
+    if (!mine()) return;
+    let data = null;
+    try { data = JSON.parse(ev.data); } catch { return; }
+    if (!data || !data.id) return;
+    cm.full.set(chatId, data);
+    const list = (cm.lists.get(cm.projectId) || []).map((c) => (c.id === chatId ? Object.assign({}, c, { state: data.state }) : c));
+    cm.lists.set(cm.projectId, list);
     cmPaint();
     cmScrollLog();
   });

@@ -378,3 +378,24 @@ test('a chat whose project stopped being watched is dropped, unless it is runnin
   busy.state = 'idle';
   comms.remove(busy.id);
 });
+
+test('a message sent while the agent works waits in a visible queue, and can be taken back', () => {
+  const chat = comms.startChat({ project: fakeProject(fixtureRoot('proj-queue')) });
+  chat.state = 'running';                 // as if a turn were in flight
+  try {
+    const a = comms.send(chat.id, 'first follow-up');
+    const b = comms.send(chat.id, 'second follow-up');
+    assert.equal(a.queued, true);
+    assert.deepEqual(comms.toJSON(chat).queue.map((q) => q.text), ['first follow-up', 'second follow-up']);
+    assert.equal(comms.toJSON(chat).turns.length, 0, 'nothing is sent while it waits');
+    comms.unqueue(chat.id, a.turn.id);
+    assert.deepEqual(comms.toJSON(chat).queue.map((q) => q.text), ['second follow-up']);
+    assert.throws(() => comms.unqueue(chat.id, a.turn.id), (err) => err.status === 409);
+    for (let i = 0; i < 9; i++) comms.send(chat.id, 'more ' + i);
+    assert.throws(() => comms.send(chat.id, 'one too many'), (err) => err.status === 429);
+  } finally {
+    chat.state = 'idle';
+    chat.queue = [];
+    comms.remove(chat.id);
+  }
+});

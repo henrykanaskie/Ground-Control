@@ -2351,3 +2351,14 @@ main{padding-bottom:64px;min-height:calc(100vh - var(--topbar-h) - 90px)}
   .rn-ask-foot .btn{justify-content:center;width:100%}
 }
 @media (prefers-reduced-motion:reduce){.rn-badge.is-waiting .rn-dot{animation:none!important}}
+
+/* A message waiting behind the running reply: plainly not sent yet */
+.cm-msg.is-queued .cm-text{border-style:dashed;border-color:var(--line-2);background:transparent;color:var(--text-2)}
+.cm-wait{font-family:var(--sans);font-size:10.5px;letter-spacing:0;text-transform:none;color:var(--warn)}
+.cm-unq{
+  display:grid;place-items:center;width:18px;height:18px;margin-left:2px;padding:0;
+  background:transparent;border:1px solid transparent;border-radius:var(--radius-xs);color:var(--text-3);cursor:pointer;
+}
+.cm-unq:hover{color:var(--danger);border-color:var(--line)}
+.cm-unq .icon{width:10px;height:10px}
+.cm-row .cm-stop + .cm-send{margin-left:0}

@@ -1759,6 +1759,12 @@ async function handleComms(req, res, pathname) {
       if (req.method !== 'POST') return sendError(res, 405, 'method not allowed');
       return sendJSON(res, 200, commslib.toJSON(commslib.stop(chatId, 'stopped from the dashboard')));
     }
+    if (action === 'queue' && parts[2]) {
+      // Take back a message that is still waiting to be sent.
+      if (req.method !== 'DELETE') return sendError(res, 405, 'method not allowed');
+      try { return sendJSON(res, 200, commslib.toJSON(commslib.unqueue(chatId, safeDecode(parts[2]) || ''))); }
+      catch (err) { return sendError(res, err.status || 500, err.message || 'could not remove it'); }
+    }
     if (action === 'stream') {
       if (req.method !== 'GET') return sendError(res, 405, 'method not allowed');
       return commsStream(req, res, chat);
@@ -1841,8 +1847,8 @@ async function commsSend(req, res, chat) {
   if (!project) return sendError(res, 409, 'that project is no longer being watched');
 
   try {
-    const { turn } = commslib.send(chat.id, body.text);
-    return sendJSON(res, 202, { chat: commslib.toJSON(chat), turnId: turn.id });
+    const { turn, queued } = commslib.send(chat.id, body.text);
+    return sendJSON(res, 202, { chat: commslib.toJSON(chat), turnId: turn.id, queued: Boolean(queued) });
   } catch (err) {
     return sendError(res, err.status || 500, err.message || 'the message could not be sent');
   }
@@ -1897,6 +1903,7 @@ function commsStream(req, res, chat) {
     if (closed) return;
     if (event === 'delta') return send('delta', { turnId: turn.id, partial: turn.partial || '' });
     if (event === 'settled') return send('settled', commslib.toJSON(updated));
+    if (event === 'chat') return send('chat', commslib.toJSON(updated));
     send('turn', { chat: commslib.summaryJSON(updated), turn: commslib.turnJSON(turn) });
   });
 }
