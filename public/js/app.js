@@ -6414,8 +6414,30 @@ function cmPaint() {
   if (cmStale()) return;
   const p = cm.node;
   const body = p._body;
+  // Every event repaints the panel, so where you were reading has to survive
+  // it: the log's own scroll (kept, or kept at the bottom if you were there),
+  // and the page's, which shrinking and regrowing the panel would move.
+  const old = body.querySelector('.cm-log');
+  const prev = old ? { chat: old.dataset.chat, top: old.scrollTop,
+    atBottom: old.scrollHeight - old.scrollTop - old.clientHeight < 40 } : null;
+  const pageY = window.scrollY;
+  const hadFocus = body.contains(document.activeElement) ? document.activeElement.className : null;
+  body.style.minHeight = body.offsetHeight + 'px';
   clear(body);
+  try { cmPaintBody(p, body); } finally {
+    body.style.minHeight = '';
+    const log = body.querySelector('.cm-log');
+    if (log && prev && prev.chat === log.dataset.chat) log.scrollTop = prev.atBottom ? log.scrollHeight : prev.top;
+    else if (log) log.scrollTop = log.scrollHeight;     // a chat you just opened starts at its latest
+    if (window.scrollY !== pageY) window.scrollTo(window.scrollX, pageY);
+    if (hadFocus === 'cm-input') {
+      const ta = body.querySelector('.cm-input');
+      if (ta && !ta.disabled) ta.focus({ preventScroll: true });
+    }
+  }
+}
 
+function cmPaintBody(p, body) {
   const status = cm.status || {};
   if (!status.available) {
     body.append(h('div', 'panel-note',
@@ -6476,6 +6498,7 @@ function cmBar(list, activeId) {
     t.addEventListener('click', () => {
       if (c.id === activeId) return;
       cm.active.set(cm.projectId, c.id);
+      cm.focusNext = c.id;
       cmCloseStream();
       cmPaint();
     });
@@ -6510,6 +6533,7 @@ function cmBar(list, activeId) {
 function cmLog(chat) {
   const log = h('div', 'cm-log');
   log.id = 'cm-log';
+  log.dataset.chat = chat.id;
 
   if (chat.resumeFrom) {
     log.append(h('div', 'cm-seed',
@@ -6711,7 +6735,12 @@ function cmComposer(chat) {
   wrap.append(row);
 
   cm.errNode = err;
-  if (!running) setTimeout(() => { try { ta.focus(); } catch { /* ignore */ } }, 0);
+  // Focus only when you asked for this chat (opened it, or just sent), and
+  // never by scrolling the page to it: a repaint must not move what you read.
+  if (!running && cm.focusNext === chat.id) {
+    cm.focusNext = null;
+    setTimeout(() => { try { ta.focus({ preventScroll: true }); } catch { /* ignore */ } }, 0);
+  }
   return wrap;
 }
 
@@ -6751,6 +6780,7 @@ function cmStart(opts) {
       const list = cm.lists.get(projectId) || [];
       cm.lists.set(projectId, [chat].concat(list));
       cm.active.set(projectId, chat.id);
+      cm.focusNext = chat.id;
       cmCloseStream();
       if (!cmStale()) cmPaint();
       return chat;
@@ -6787,6 +6817,7 @@ function cmSend(id, text) {
   ]);
   chat.state = 'running';
   cm.drafts.delete(id);
+  cm.focusNext = id;          // the box is yours again once the reply is in
   cmPaint();
   cmScrollLog(true);
 
